@@ -55,6 +55,7 @@ the GPU execution model, it has all of the restrictions of parallel loops, plus 
 * Pointers/references are not allowed
 * No allocation whatsoever is allowed
 * No variable length arrays are allowed (and, by extension, strings)
+    * ...Unless they are uniform across all iterations of the loop
 * All internal loops must be bounded and constant
 * All data visible to the loop should be explicitly specified (maybe the compiler can infer this?)
 
@@ -80,42 +81,87 @@ then responsible for `await`ing your returned value.
 `async` can also be applied to a block, creating an implicit function that auto-captures (using
 implicit function arguments) all referenced variables. Aliasing rules still apply here.
 
+(MAYBE) `cancel` signals an `async` value to stop executing
+
 ## Pipelines
 
 You can create pipelines that chain generators. Generators consume a stream of values of the same
 type and output another stream of any number of values of a certain type. This output is designated
 with the `yield` keyword. `return` is not allowed in generators. Use `fail` to indicate errors.
 
-Generators may not access any data not passed to them via the stream or parameters.
+In order to ensure that generators have the same semantics regardless of whether they're run on
+demand or in parallel, in addition to memory safety, they have the following restrictions:
+
+* Generators may not access any data not passed to them via the stream or parameters.
+* The only side effect allowed is memory allocation on the temporary allocator.
+* Generators must never assume responsibility for pointers fed to them.
+
+(NOTE) There may be some need for pipeline backpressure of some sort to prevent out-of-memory errors
+
+Syntax will look something like this:
+
+```
+func filter(predicate: $T => Bool) [value: T]: T {
+    if predicate(value) {
+        yield value
+    }
+}
+
+func map(transform: $T => $R) [value: T]: R {
+    yield transform(value)
+}
+
+foo := 1..10 ; map(x => x * x + 1) ; filter(math.isprime)  \\ foo is [2, 5, 17, 37]
+```
+
+(Pipelines should probably be implemented in userland)
 
 
 # Built-in Types
 
-* `int` - signed/unsigned, 8/16/32/64
-* `float` - 32/64
-* `bool`
-* `vec` - int/float, 2/3/4, always 32 bit
-* `mat` - 2/3/4 x 2/3/4
-* `string` (not avaialable in GPU blocks)
-* `char` - single codepoint of a string (also not in GPU blocks)
+* `Int` - signed/unsigned, 8/16/32/64
+* `Float` - 32/64
+* `Bool`
+* `Vec#` - int/float, 2/3/4/8/16, e.g.:
+    * `Vec4`
+    * `Float32Vec2`
+    * `SInt8Vec8`
+    * `Float64Vec16`
+    * All vector types support swizzles as pseudo-properties (mirroring OpenCL), e.g.
+        * `.xxwz` -> elements 0, 0, 3, 2
+        * `._1af7` -> elements 1, 10, 15, 7
+        * `.lo`, `.hi`, `.even`, `.odd`
+* `String` (not avaialable in GPU blocks)
+* `Rune` - single codepoint of a string (also not in GPU blocks)
+
+Built-in types are available with various spellings, e.g.
+
+* `Int` = `SInt` = `Int64` = `SInt64` = `S64` = `Integer`
+* `Float` = `Float64` = `F64`
+* `String` = `Str`
+* `Rune` = `Char`
+* `Bool` = `Boolean`
+
+The recommended convention is to use `PascalCase` for all types.
+
 
 ## Exact types
 
 These types support `==` and `!=`
 
-* `int`
-* `bool`
-* `string`
-* `char`
-* integer `vec` and `mat`
+* `Int`
+* `Bool`
+* `String`
+* `Char`
+* integer `Vec` and `Mat`
 
 ## Orderable types
 
 These types support `<`, `<=`, `>`, and `>=`
 
-* `int`
-* `float`
-* `string` (by lexicographic unicode codepoint ordering. Use `collate` for other sorts) - Maybe?
+* `Int`
+* `Float`
+* `String` (by lexicographic unicode codepoint ordering. Use `collate` for other sorts) - Maybe?
 
 ## Arrays
 
@@ -123,34 +169,66 @@ Arrays can be arbitrary-dimensional
 
 Arrays can be sized at compile time or runtime, but only 1D arrays can be resized after being created.
 
-## Maps
+```
+resizable: Int[]
+matrix: Float[3, 4]    \\ 3 x 4 array (static)
+eight_dims: Float[:8]  \\ 8-dimensional array (fixed, but size determined at runtime)
+who_knows: Float[*]    \\ any-dimensional array
+```
 
-Can map exact types to any other type
+Arrays support broadcasting of functions and operators with scalars. (as in numpy)
 
-# Data Structures
+```
+foo : Int![] = [1, 2, 3, 4]
+print(foo ^ 2)  \\ -> [1, 4, 9, 16]
+print(8 * foo)  \\ -> [8, 16, 24, 32]
+print(sqrt(foo)) \\ -> [1.0, 1.414213, 1.732050, 2.0]
+```
 
-## Null
+Broadcasted op-assignments are only legal if the result of the operator returns the same type as the
+array's contained type.
+
+```
+foo += 4
+print(foo)  \\ -> [5, 6, 7, 8]
+foo *= math.PI  \\ type mismatch error!
+```
+
+Note: `++` is the array concatenation operator and is not broadcasted
+
+## Mutability
+
+All values are immutable by default when explicitly typed.
+To mark something as mutable, add a `!` after its type declaration.
+This can be combined with nullability and pointers.
+
+Local variables are as mutable as possible when their type is inferred.
+For value types, this will always make them fully mutable, as the value will be copied.
+
+## Nullables
 
 Variables cannot contain null unless their type allows it.
-Non-nullable variables must be initialized when declared.
+Non-nullable variables use their default values if not initialized.
 
-It is an error to access the contents of anything nullable except in branches where the value is
-guaranteed to no longer be null. (No unwrapping is necessary)
+Nulls do not need to be unwrapped to be used. As long as their value is guaranteed to not be null
+when a non-null value is needed, the use is legal.
+
+`.` safely navigates null values; if the left side is null, then the whole unit is null.
 
 Both of these are legal and equivalent:
 
 ```
-if thing == null {
+if foo == null {
     return 42
 }
 
-\\ thing cannot be null at this point
-thing.do_something(42)
+\\ foo cannot be null at this point
+bar(foo, 42)
 ```
 
 ```
-if thing != null {
-    thing.do_something(42)
+if foo != null {
+    bar(foo, 42)
 }
 else {
     return 42
@@ -160,68 +238,129 @@ else {
 This is also legal:
 
 ```
-if thing == null {
-    thing = alloc(Foo)
+if @foo == null {  \\ foo: @?!Int!
+    @foo = alloc(Int)
 }
 
-thing.do_something(42)
+bar(foo, 42)
 ```
 
 However, this is not legal:
 
 ```
-if thing == null {
-    foo()
+if foo == null {
+    baz()
 }
 
-thing.do_something(42)
+bar(foo, 42)
 ```
 
-Because `thing` could be null when do_something is called.
+Because `foo` could be null when `bar` is called.
 
 ## Pointers
 
 `@` is the symbol designating a pointer and should be placed to the left of the type.
 There is a distinction between a pointer to a nullable type and a nullable pointer to a type:
 
-* `@int?` - pointer to nullable int
-* `@?int` - nullable pointer to int
+* `@Int?` - pointer to nullable int
+* `@?Int` - nullable pointer to int
 
 The underlying implementation details *may* be identical in some cases.
 
 Memory is managed implicitly in many cases. Basic escape analysis will be used to automatically
-use temporary allocators (which require no freeing) for values that do not escape. For values that
-escape in some code paths, a `free` will be implicitly inserted before the return and a warning will
-be optionally emitted.
+use temporary allocators (which require no freeing) for values that do not escape but cannot live on
+the stack. For values that escape in some code paths, a `free` will be implicitly inserted before
+the return and a warning will be optionally emitted with `#warn implicit_free`
+
+Unlike the C family, pointers are dereferenced by default. Each use of `@` will cancel out one level
+of dereferencing, thus:
+
+```
+foo : @?!Int! = null
+bar := 27
+baz := 6
+@foo = bar  \\ foo now points to bar
+foo = 42    \\ value pointed by foo is now 42
+print(bar)  \\ -> 42
+@foo = baz  \\ foo now points to baz
+baz += 1
+print(foo)  \\ -> 7
+print(@foo) \\ -> (some memory address)
+```
+
+Except when inferring a left side type, assignments with `@` on a lone identifier will automatically
+add as many `@`s as needed on the right side for the types to match (assuming they are compatible)
+
+```
+bar : @@Float = heapval(heapval(13.37))
+foo : @@@Float = undefined
+\\ All of the following are equivalent:
+@@@foo = bar
+@@@foo = @bar
+@@@foo = @@bar
+@@@foo = @@@bar
+```
+
+Note that it is only possible to have as many @s as the right side type has, plus one more for
+variables in scope (as opposed to literals and temps)
+
+So all the following are valid:
+
+```
+@fruit_count = apples
+@peter = func_that_returns_a_pointer(a, b, c)
+@@jack = ptr_ptr_func()
+@@indirect = some.pointer
+```
+
+But these are invalid:
+
+```
+@thingy = 43
+@@jeff = alloc(Float)
+@@@very_indirect = alloc(type @String)
+```
+
+When a function call requires a pointer, you can still pass a value and it will be implicitly
+converted to a pointer:
+
+```
+func do_something(a: @Int): Float {
+    \\ blah blah blah
+}
+foo : Int = undefined
+set_integer(foo)
+```
 
 ## Structs
 
 Structs are POD.
 
-* Pointers in structs may be maked as `#owned`, meaning a call to `free` on that struct will also free its contents.
+* Pointers in structs may be marked as `#owned`, meaning a call to `free` on that struct will also free its contents.
 * Recursive pointers (i.e. pointers to a struct of the same type, directly or indirectly) must be nullable.
+
+Struct literals don't exist. Create struct values with a constructor-like syntax instead.
 
 ## Unions
 
 Unions are tagged.
 
-## Arrays
-
-Arrays can be multi-dimensional and allow broadcasting and vector operations.
+`Any` is a tagged union of *every type*
 
 ## Tables
 
 A table is conceptually similar to a struct, but it is only stored in homogeneous memory either on
 the heap or in static memory. Tables are dynamically sized by default and are ordered arbitrarily.
 Tables are instanced by default.
+Tables are also *always* mutable.
 
-Tables support the typical insert, delete, update operations, but with more convenient OO-like
-syntax rather than db-like queries. They also support fast iteration. There is no garbage
-collection, so it is your job to delete table entries when they are no longer needed.
+Tables support the typical insert, delete, update operations, but with function syntax.
+They also support fast iteration. There is no garbage collection, so it is your job to delete table
+entries when they are no longer needed.
 
 ```
-Entity: table {
-    name: string #key
+table Entity {
+    name: String #key
     position: Vec3
     rock_data: @?Rock
     player_data: @?Player
@@ -237,34 +376,35 @@ arbitrary values.
 In addition, `name` is designated as a key, so you can access any entry by name. It will be indexed
 with an additional hashtable, but also prevents the creation of an entry with a duplicate name.
 You can mark multiple fields as a key, treating it as a combined value key.
-Key fields can only be non-nullable ints, strings, bools, and any struct containing only those.
+Key fields must be equality comparable and non-nullable pure value types.
+(i.e. Int, String, Char, Bool, IVec and structs containing only those)
 You can have multiple sets of keys by appending a number after the #key
 
 tables may only store structs inline. Arrays inside tables always own their contents.
 
 ```
-Bullet: table[100] {
+table[100] Bullet {
     ...
 }
 ```
 
-This table is limited to a maximum of 100 entries.
+The above table is limited to a maximum of 100 entries.
 
 ```
-WeakRef: shared table {
+table Sprites: Renderer {
     ...
 }
 ```
 
-This table can be accessed from all metathreads and is protected by synchronization primitives.
+The above table is a statically defined table available only to the Renderer metathread.
 
 ```
-Sprites: Renderer table {
+table WeakRef: * {
     ...
 }
 ```
 
-This table is specifically available only to the Renderer master thread.
+The above table can be accessed from all metathreads and is protected by synchronization primitives.
 
 `#sparse` and `#dense` are compiler hints for how to store tables. Dense tables have more consistent
 iteration and sparse tables have fast foreign key access and deletion. Dense tables should generally
@@ -283,7 +423,7 @@ SOA/AOS hints as well.
 I haven't yet decided the design of error handling. There's a few methods of handling errors, and
 I'm not a fan of any of them:
 
-* Ignore all errors and plow through as if nothing is wrong. (Javascript, PHP, Perl, Bash)
+* Ignore all errors and plow through as if nothing is wrong. (Javascript, PHP, Bash)
     * Although it's pleasant for beginners not to encounter errors constantly, this makes it *a lot*
     harder to track down bugs.
     * This can be sometimes reasonable for less critical errors such as integer overflow.
@@ -305,16 +445,19 @@ I'm not a fan of any of them:
     basically the same no matter which line it is writing.
     * Resource leaks are really easy to create by accident without RAII or something like `with` in
     Python.
-* Return codes, whether alone or with multiple return values (C, Lua, Go, GDScript, Jai)
+* Return codes, whether alone or with multiple return values (C, Perl, Lua, Go, GDScript, Jai)
     * Introduces noise from explicit control flow
     * It's really easy to ignore errors
+* Errors are stored in a global variable, queue, or stack (C, OpenGL)
+    * Errors are often far-removed from their cause
 
  I would like to somehow strike a balance between all these options. Goals:
 
 * Certain errors must be handled, e.g.
     * Cannot open file
     * Connection failed/interrupted
-* Explicit, predictable control flow
+* Less important errors can be ignored
+* No hidden control flow
 * Minimal clutter/boilerplate
 * Must not get in the way of composing complex expressions
     * i.e. you don't have to check lots of intermediate values for errors before feeding them into
@@ -362,6 +505,8 @@ zero and null pointer dereferences) do not occur at runtime in the first place.
         * `#divide_by_zero abort` to abort immediately with an error when zero division occurs
         * `#divide_by_zero unreachable` to trigger static analysis to prevent division by zero (the default, maybe)
     * These apply only at lexical scope level
+* Syntax to catch errors from previous statement (usually line)
+* Exceptions that don't propagate beyond the current function and act like `return`s
 
 
 # Compile-time value constraints
@@ -396,22 +541,66 @@ Like Zig, this language has a `test` keyword that allows you to write tests.
 Test contexts also allow unconventional practices like monkeypatching system functions and data
 structures with mock functions/objects, allowing for comprehensive testing of stateful code.
 
+## `#patch`
+
+Much like Python's `unittest.mock`, you have the ability to monkeypatch any function or operator
+with a mock function, including system functions and built-in operators.
+
+# Metaprogramming
+
+You can generate arbitrary code at compile time with a collection of `#directives`:
+
+* `#generate` (expression that returns an array of AST nodes) - to insert arbitrary code anywhere
+* `#for` (expression) (block) - looping macro to generate nodes from a range
+    * `#yield` (expression that returns AST node) - generates a node within a `#for`
+
 
 # Syntax
+
+Curly brackets *always* denote a lexical scope.
+Curly brackets are *mandatory* for all control structures. The C-style parentheses are optional.
+
+Comments start with a double backslash `\\` and continue to the end of the line.
+There are no multiline comments.
+
+Character literals may optionally omit the closing single quote.
+
+## Semicolons
 
 This language does not use semicolons to terminate or separate statements.
 To make line continuations less error-prone, a backslash followed by any number of non-printable
 characters then a newline is treated as a line continuation.
 Additionally, when inside parentheses or square brackets, newlines are ignored.
 
-Curly brackets *always* denote a lexical scope.
-Curly brackets are *mandatory* for all control structures. The C-style parentheses are optional.
+Semicolons instead separate expressions with the following semantics:
 
-Comments are indicated with a double backslash `\\`
+* If any of the expressions fail, the whole sequence of `;` fails
+* The return value is the value of the last expression in the chain.
+* (MAYBE NOT) This is rendered unnecessary by using block expressions `{ ... }`, as those have
+similar semantics, with the only difference being that semicolons only separate expressions,
+not statements.
 
-Character literals may omit the closing single quote.
+## String Literals
+
+Strings are normally surrounded by double quotes, but have a few variants.
+
+- Triple-quotes allow strings to span multiple lines
+- Preceding string literals with `\` disables escapes
+- Preceding string literals with `$` enables interpolation between `{` and `}`
 
 ## Operators
+
+Operator overloads are required to be (nearly) pure functions.
+They may not have side effects, except for temporary allocators and debug printing.
+
+You can overload existing operators (except for boolean logic operators) by naming a function
+with the same symbols:
+
+```
+func + (a: Foo, b: Bar) {
+    \\ function body
+}
+```
 
 ### Word Operators
 
@@ -436,7 +625,7 @@ In all these cases, all arguments *must* be const.
 ### Arbitrary Symbolic Operators
 
 In addition to being able to override existing binary and unary symbolic operators, you can create
-your own from the following set of symbols: `!@~%^&*/+-|<>`
+your own from the following set of symbols: `!~%^&*/+-|`
 
 The precedence depends on the first character and it will always be left-associative.
 Unless otherwise stated below, the precedence is the same as the first character in isolation
@@ -451,24 +640,29 @@ This is only valid if the left hand side is assignable and is known to already h
 From tightest to loosest: (left-associative unless otherwise stated)
 
 * Parentheses, array/map definitions
-* Function calls, array access, `.`
-* `**` exponentiation (right associative)
+* `.`
+* Function calls, array access
+* `@` - un-dereferencing
+* `^` - exponentiation (right-associative)
 * Unary operators
-* Arithmetic Operators: (cannot be mixed with bitwise operators without parentheses)
-    * `*`, `/`, `%`
-    * `+`, `-`
-* Bitwise Operators: (cannot be mixed with arithmetic operators without parentheses)
-    * `&`
-    * `|`
-    * `^`
-    * `<<`, `>>` (non-associative)
-* Custom operators starting with `<`, `>`, `~`, or `!`
-* Word operators
+* `*`, `/`, `%`, `&`
+* `+`, `-`, `~`, `!`
+* `\word` operators
+* `?` - "elvis" / "or else" / null-coalescing operator (non-associative)
+* `x if cond else y` ternary (non-associative)
+* `|`
+* `=>` - anonymous functions (right-associative)
 * Comparison operators `==`, `!=`, `<`, `<=`, `>`, and `>=`  (chainable, as in Python)
+* `not`
 * `and`
 * `or`
 * `xor`
-* Assignments
+* `,` (not really an operator, but this can matter)
+* Assignments (statement level only, but can chain right-associatively if all lhs's are assignable)
+
+Boolean operators are spelled out and cannot be overloaded.
+Bitwise operations are defined with intrinsic functions rather than symbolic operators
+Casts are functions that look like constructors, not operators
 
 ## Default Argument Override
 
@@ -486,6 +680,15 @@ The `#default` directive allows you to override a default argument value for the
     }
 }
 ```
+
+# Type Coercion Rules
+
+`X`, bigger `X` -> bigger `X`
+`UInt`, `SInt` -> `SInt` (but not orderable)
+`Int`, `Float` -> `Float`
+`X`, `Bool` -> `Bool`
+
+@x = y -> @y if x and y point to *exactly* the same type, including `?` and `!` modifiers
 
 
 # Context
@@ -510,36 +713,32 @@ function will be called.
 
 # Aliasing
 
-Most of the aliasing rules apply only to parallelism, however all mutable pointer parameters are `restrict`
+Most of the aliasing rules apply only to parallelism, however all mutable pointer parameters are 'restrict'
 (in C terms) by default and it is an error if the compilier can't prove that pointers passed into
-mutable arguments are not aliasing other arguments. This `restrict` by default behavior can be
+mutable arguments are not aliasing other arguments. This 'restrict' by default behavior can be
 disabled for individual parameters with an `#allow_alias` directive.
-
-All aliasing rules will be ignored inside an `unsafe` block.
 
 Allocators are assumed to return pointers that do not alias anything else in scope.
 
 
+# The Zen / Goals
 
-# `unsafe`
-
-Unsafe blocks are used to do things that are error-prone and things that require you to *really*
-know what you're doing.
-
-These things are considered unsafe:
-
-* Calling functions explicitly marked as unsafe
-* Passing possibly-aliased mutable pointers to multiple locations (where at least one is mutable)
-* Pointer arithmetic
-* Treating pointers as arrays
-* Casting a pointer to another type
-* Atomics and memory fences (maybe)
-* Ignoring an error from a function that requires error handling
-
-Everything else is considered safe.
-
-Things that are not considered unsafe, but would be in Rust:
-
-* Foreign function calls
-* Dynamic library calls
-* Dereferencing pointers
+* All things in moderation.
+* Implicit is better than cluttered.
+* Explicit is better than ambiguous.
+* Pragmatic is better than traditional.
+* Boring is better than trendy.
+* Intuitive is better than idiomatic.
+* Precise is better than intuitive.
+* Pretty doesn't have to mean slow.
+* Fast doesn't have to mean ugly.
+* Repetition is the root of all evil.
+* The things you do most often should have the plainest appearance.
+* Code will evolve. Refactoring code should involve little more than search and replace.
+* Your data structures tell you more about performance than your code.
+* Sharing mutable data is hard. Avoid it.
+* It should be hard to do error-prone things.
+* Mistakes happen. Make them easy to find.
+* Computers are better at finding mistakes than humans.
+* Computation should be done with code, not type systems.
+* Type checking is not a form of error checking.

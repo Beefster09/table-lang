@@ -1,0 +1,21 @@
+#!/usr/bin/env python3
+
+keywords = sorted(line.strip() for line in open('src/keywords.txt'))
+
+print("#include <string.h>")
+
+print("Keyword str_to_kw(const char* str) {")
+print('\t', end='')
+for kw in keywords:
+    print(f'if (strcmp(str, "{kw}") == 0) return KW_{kw.upper()};')
+    print("\telse ", end='')
+print("return KW_NONE;")
+print("}")
+
+print("const char* kw_to_str(Keyword kw) {")
+print("\tswitch (kw) {")
+for kw in keywords:
+    print(f'\t\tcase KW_{kw.upper()}: return "{kw}";')
+print('\t\tdefault: return "<ERROR>";')
+print("\t}")
+print("}")

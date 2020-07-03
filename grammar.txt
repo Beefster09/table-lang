@@ -1,0 +1,156 @@
+
+
+module: top_level_stmt*
+
+top_level_stmt:
+    import
+    | const_def
+    | type_alias
+    | struct_def
+    | table_def
+    | func_def
+    | test_def
+    | top_level_directive
+
+import: "import" (identifier "=")? (qualname | string) EOL
+
+const_def:
+    "pub"? "const" identifier "=" expression EOL
+    | "pub"? "const" "{" const_def_line+ "}"
+const_def_line: identifier "=" expression EOL
+
+type_alias: "pub"? "type" identifer ":" type EOL
+
+struct_def: "pub"? "struct" identifier ("(" param_list ")")? "{" field* "}" EOL
+
+table_def: "pub"? "table" ("[" expression "]")? identifier (":" (qualname | "*"))? "{" field* "}" EOL
+
+field: "pub"? identifier ":" type ("=" expression)? EOL
+
+param_list:
+      param ("," param)* ","?
+    | (param ",")* identifier ":" type "..."
+param:
+    identifier ":" type ("=" expression)?
+    | identifier ":" "$" identifier
+
+func_def: "pub"? "func" (identifier | operator) "(" param_list? ")" (":" type)? "{" statement* "}" EOL
+
+test_def: "test" string_literal "{" statement* "}"
+
+statement:
+      declaration
+    | assignment
+    | func_stmt
+    | return_stmt
+    | yield_stmt
+    | fail_stmt
+    | assert_stmt
+    | cancel_stmt  // Corresponds to async/await
+    | defer_stmt
+    | if_stmt
+    | match_stmt
+    | while_loop
+    | for_loop
+    | break_stmt
+    | skip_stmt
+    | with_block
+    | expression EOL
+    | "{" statement* "}" EOL
+    | tag_directive
+
+declaration:
+    identifier ":" type? "=" (expression | "undefined" | "default") EOL
+    | identifier ":" type EOL
+
+assignment:
+    assignable operator "=" expression EOL
+    | (assignable "=")+ expression EOL
+assignable: "@"* qualname ("[" array_args "]")?
+
+func_stmt: "func" identifier "(" param_list? ")" (":" type)? "{" statement* "}" EOL
+
+return_stmt: "return" expression EOL
+yield_stmt: "yield" expression EOL
+fail_stmt: "fail" qualname? string_literal? EOL
+assert_stmt: "assert" expression (":" string_literal)? EOL
+cancel_stmt: "cancel" expression EOL
+
+if_stmt: "if" expression "{" statement* "}" EOL
+while_loop: "while" expression ("#label" identifier)? "{" statement* "}" EOL
+
+for_loop: ("#gpu" | "#parallel")? "for" for_range (";" for_range)* ("#label" identifier)? "{" statement* "}" EOL
+for_range:
+    (identifier ":")? expression ".." expression?  // Note: infinite ranges not allowed in gpu/parallel loops
+    | identifier ("," identifier)+ ":" expression ("," expression)+  // zipped parallel iteration
+    | (identifier ":")? expression
+    // Note: omitting the identifier is only valid for single-range for loops
+    // The identifier `it` is used for the item when no identifier is specified
+    // `_index` is added to the end of the identifer for the index when pulled from an array or other iterable
+
+break_stmt: "break" loop_label? EOL
+skip_stmt: "skip" loop_label? EOL  // a.k.a. continue
+loop_label:
+    identifier
+    | "while"
+    | "for"
+
+match_stmt:
+    "type" "match" expression "{" EOL type_case+ "}" EOL  // expression must be of type Any or some union
+    | "match" expression "{" EOL pattern_case+ "}" EOL
+type_case: type "{" statement* "}" EOL
+pattern_case: pattern "{" statement* "}" EOL
+
+with_block: "with" context (";" context)* "{" statement* "}" EOL
+context:
+    (identifier "=")? expression  // basically Python's with ... as ...
+    "context" "." identifier "=" expression
+
+tag_directive: /#\w+/ EOL* statement
+
+expression:
+    literal
+    | qualname
+    | "@" expression
+    | func_call
+    | array_access
+    | binop_chain
+    | ternary_expr
+    | async_call
+    | await_expr
+    | lambda
+    | "type" "(" type ")"
+    | "(" expression ")"
+    | "{" statement+ "}"
+
+array_access: expression "[" array_args "]"
+
+ternary_expr: expression "if" expression "else" expression
+
+lambda:
+    identifier? "=>" expression
+    | "(" ")" "=>" expression
+    | "(" identifier ("," identifier)+ ")" "=>" expression
+
+type:
+    qualname
+    | qualname "(" type_args ")"
+    | "@" "?"? "!"? type  // ? and ! can be in either order
+    | type "?"
+    | type "!"
+    | type "[" array_shape? "]"
+    | type ("|" type)+
+    | type "=>" type  // Right associative
+    | "(" type ("," type)* ")" "=>" type
+    | "(" type ")"
+
+type_args: type_arg ("," type_arg)* ","?
+type_arg: (identifier "=")? type
+
+array_shape: // empty = 1-dimensional resizable
+    ":" integer  // statically-known dimensionality
+    | array_dim ("," array_dim)?  // can also include a single ... separator at beginning, middle, or end
+    | "..."  // runtime static, any number of dimensions here
+array_dim:
+    integer  // compile-time static, 1 dimension
+    | "*"    // runtime static, 1 dimension

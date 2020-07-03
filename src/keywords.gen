@@ -1,0 +1,14 @@
+#!/usr/bin/env python3
+
+keywords = list(line.strip() for line in open('src/keywords.txt'))
+
+print("#pragma once")
+
+print("typedef enum {")
+print("    KW_NONE = 0,")
+for kw in keywords:
+    print(f"\tKW_{kw.upper()},")
+print("} Keyword;")
+
+print("Keyword str_to_kw(const char* str);")
+print("const char* kw_to_str(Keyword kw);")
