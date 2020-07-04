@@ -17,9 +17,6 @@ typedef struct Token {
 		TOK_INT,
 		TOK_FLOAT,
 		TOK_STRING,
-		// TOK_STRING_TEMPLATE_START,
-		// TOK_STRING_TEMPLATE_MIDDLE,
-		// TOK_STRING_TEMPLATE_END,
 		TOK_CHAR,
 		TOK_BOOL,
 
@@ -44,6 +41,7 @@ typedef struct Token {
 		TOK_AMP,
 		TOK_BAR,
 		TOK_TILDE,
+		TOK_ARROW,
 
 		TOK_EQ, TOK_NE,
 		TOK_LT, TOK_GT,
@@ -65,7 +63,7 @@ typedef struct Token {
 	union {
 		const char* str_value;
 		intmax_t int_value;
-		double float_value;
+		long double float_value;
 		bool bool_value;
 		int32_t char_value;
 		Keyword kw_value;
@@ -74,6 +72,12 @@ typedef struct Token {
 
 Lexer lexer_create(const char* filename);
 void lexer_destroy(Lexer);
+
+/// Provides the pointer to the memory block that holds this lexer's string data
+void* lexer_get_arena(Lexer);
+
+/// Returns the array of lines in the file.
+char** lexer_get_lines(Lexer, int* len);
 
 Token lexer_peek_token(Lexer, unsigned int offset);
 Token lexer_pop_token(Lexer);

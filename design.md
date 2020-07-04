@@ -625,9 +625,9 @@ In all these cases, all arguments *must* be const.
 ### Arbitrary Symbolic Operators
 
 In addition to being able to override existing binary and unary symbolic operators, you can create
-your own from the following set of symbols: `!~%^&*/+-|`
+your own from the following set of symbols: `+-*/%^~&|`
 
-The precedence depends on the first character and it will always be left-associative.
+The precedence and associativity depends on the first character.
 Unless otherwise stated below, the precedence is the same as the first character in isolation
 
 ### Compound Assignment
