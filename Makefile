@@ -27,11 +27,12 @@ generated/%.gen.h: src/%.gen | generated
 	$< > $@
 
 $(wildcard generated/keywords*.gen.h): src/keywords.txt
+generated/ast_node_types.gen.h: src/ast_nodes.h
 
 $(OBJECTS): | build
 
 compiler: $(OBJECTS) | build
-	$(LINK) $^ -o build/$@
+	$(LINK) $^ -o $@
 
 clean:
 	rm -rf build generated

@@ -1,0 +1,14 @@
+#!/usr/bin/env python3
+#depends ast_nodes.h
+
+import os.path
+
+ast_nodes_h = os.path.join(os.path.dirname(__file__), 'ast_nodes.h')
+
+with open(ast_nodes_h) as f:
+    for line in f:
+        if line.startswith("typedef") and 'struct' in line:
+            structname = line.split()[2]
+            if structname.startswith('NODE_'):
+                print(f"XMAC({structname})")
+

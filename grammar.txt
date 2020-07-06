@@ -140,9 +140,11 @@ type:
     | type "!"
     | type "[" array_shape? "]"
     | type ("|" type)+
-    | type "=>" type  // Right associative
+    | type? "=>" type  // Right associative
+    | "(" ")" "=>" type  // Right associative
     | "(" type ("," type)* ")" "=>" type
     | "(" type ")"
+    | "..."  // Open union?
 
 type_args: type_arg ("," type_arg)* ","?
 type_arg: (identifier "=")? type

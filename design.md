@@ -347,6 +347,8 @@ Unions are tagged.
 
 `Any` is a tagged union of *every type*
 
+You can create an open union which allows any type to join it later. This allows for something like type polymorphism.
+
 ## Tables
 
 A table is conceptually similar to a struct, but it is only stored in homogeneous memory either on

@@ -12,6 +12,7 @@ typedef struct Token {
 		TOK_EMPTY = 0,
 
 		TOK_KEYWORD = 0x100,
+			// Also includes keywords
 		TOK_IDENT = 1,
 		TOK_DIRECTIVE,
 		TOK_INT,
@@ -77,7 +78,7 @@ void lexer_destroy(Lexer);
 void* lexer_get_arena(Lexer);
 
 /// Returns the array of lines in the file.
-char** lexer_get_lines(Lexer, int* len);
+const char** lexer_get_lines(Lexer, int* len);
 
 Token lexer_peek_token(Lexer, unsigned int offset);
 Token lexer_pop_token(Lexer);

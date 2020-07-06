@@ -6,7 +6,7 @@
 #define CONT_MASK 0x3f
 #define CONT 0x80
 
-char* utf8_write(unsigned char* buffer, int codepoint) {
+char* utf8_write(char* buffer, int codepoint) {
 	if (codepoint < TWO_BYTES) {
 		*buffer++ = codepoint;
 	}

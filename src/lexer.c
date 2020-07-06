@@ -24,13 +24,15 @@ struct _lex_state {
 	char* next_literal;  // Rolling pointer used for storing
 	char* string_buffer; // The rolling pointer where strings and identifiers get allocated
 	char* line_buffer;   // Rolling pointer used for storing lines of the file
-	char** lines;
-	int read_offset; // used for unget
-	bool eof;
-	// TODO: save lines for error messages
+	const char** lines;
+	char* current_line;
+	int line_offset;
+	int line_length;
+	bool is_last_line;
 };
 
 Lexer lexer_create(const char* filename) {
+	// Assumption: filename outlives the lexer
 	FILE* src = fopen(filename, "r");
 	if (!src) {
 		return NULL;
@@ -47,9 +49,10 @@ Lexer lexer_create(const char* filename) {
 	self->next_literal = self->arena_block = malloc(src_size * 5 + 1);
 	self->string_buffer = ((char*) self->arena_block) + src_size * 2;
 	self->line_buffer = ((char*) self->arena_block) + src_size * 4; // size = src_size + 1 byte (for the null at the end)
-	sb_push(self->lines, self->line_buffer);
+	self->line_length = -1;
 	self->line_no = 1;
 	self->column = 1;
+	// All other fields are zero, and that is fine.
 	return self;
 }
 
@@ -58,38 +61,55 @@ void lexer_destroy(Lexer self) {
 	free(self);
 }
 
-char** lexer_get_lines(Lexer self, int* len) {
+const char** lexer_get_lines(Lexer self, int* len) {
 	if (len) *len = sb_count(self->lines);
 	return self->lines;
 }
 
 static int lexer_fwdc(Lexer self) {
-	if (self->read_offset) {
-		int result = self->line_buffer[-self->read_offset--];
-		return result? result : (self->eof? EOF : '\n');
+	if (self->line_offset > self->line_length) {
+		self->line_offset = 0;
+		self->line_length = 0;
+		sb_push(self->lines, self->line_buffer);
+		self->current_line = self->line_buffer;
+
+		while (1) {
+			int c;
+			switch (c = fgetc(self->src)) {
+				case 0: break;  // ignore null bytes
+				case EOF:
+					self->is_last_line = true;
+					// drop through is intentional
+				case '\n':
+					*self->line_buffer++ = 0;
+					goto emit_char;
+				default:
+					*self->line_buffer++ = c;
+					self->line_length++;
+			}
+		}
 	}
-	int c;
-	do { c = fgetc(self->src); } while (!c); // completely ignore null bytes
-	switch (c) {
-		case EOF:
-			self->eof = true;
-			*self->line_buffer = 0;
-			self->line_buffer = 0;
-			break;
-		case '\n':
-			*self->line_buffer++ = 0;
-			sb_push(self->lines, self->line_buffer);
-			break;
-		default:
-			*self->line_buffer++ = c;
-			break;
+	emit_char:
+	if (self->line_offset < 0) {
+		self->line_offset = 0;
+		return '\n';
 	}
-	return c;
+	else if (self->line_offset == self->line_length) {
+		if (self->is_last_line) return EOF;
+		self->line_offset++;
+		return '\n';
+	}
+	return self->current_line[self->line_offset++];
+}
+
+static bool lexer_fwd_line(Lexer self) {
+	self->line_offset = self->line_length + 1;
+	return self->is_last_line;
 }
 
 static void lexer_backc(Lexer self) {
-	do { self->read_offset++; }  // back up until we're not on a continuation byte
-	while ((self->line_buffer[-self->read_offset] & 0xC0) == 0x80);
+	// back up until we're not on a continuation byte
+	while ((self->current_line[--self->line_offset] & 0xC0) == 0x80);
 }
 
 static int read_utf8_cont(Lexer self, int first, char** text_ptr) {
@@ -170,13 +190,15 @@ static void lexer_emit_token(Lexer self) {
 		case '\\':
 			switch (FWD()) {
 				case '\\':  // Comment
-					while (FWD() != '\n') {
-						if (cur_ch == EOF) EMIT(TOK_EOF);
-					}
+					if (lexer_fwd_line(self)) EMIT(TOK_EOF);
 					goto emit_eol;
 				case '"':  // Raw String
 					raw_string = true;
 					goto handle_string;
+				case '\n':
+					self->line_no++;
+					self->column = 1;
+					goto reset;
 				default: // Just a backslash
 					BACK();
 					EMIT(TOK_BACKSLASH);
@@ -520,7 +542,7 @@ static void lexer_emit_token(Lexer self) {
 				Keyword kw = str_to_kw(current->literal_text);
 				if (kw) {
 					current->kw_value = kw;
-					EMIT(TOK_KEYWORD);
+					EMIT(/* TOK_KEYWORD | */ kw);
 				}
 				else {
 					current->str_value = current->literal_text;
@@ -552,15 +574,14 @@ Token lexer_pop_token(Lexer self) {
 #define REPR_SIZE 80
 
 const char* token_repr(const Token* tok) {
-	char* out = malloc(REPR_SIZE);
+	char* out = malloc(REPR_SIZE); // <-- sloppy memory management here
 	switch (tok->type) {
 		case TOK_EMPTY:
 			snprintf(out, REPR_SIZE, "<EMPTY>");
 			break;
 
 		case TOK_KEYWORD:
-			snprintf(out, REPR_SIZE, "<KEYWORD %s : %d,%d..%d,%d>",
-				kw_to_str(tok->kw_value),
+			snprintf(out, REPR_SIZE, "<KEYWORD \?\?\? : %d,%d..%d,%d>",
 				tok->start_line, tok->start_col,
 				tok->end_line, tok->end_col
 			);
@@ -863,7 +884,14 @@ const char* token_repr(const Token* tok) {
 			break;
 
 		default:
-			snprintf(out, REPR_SIZE, "<\?\?\?>");
+			if ((tok->type & TOK_KEYWORD) == TOK_KEYWORD) {
+				snprintf(out, REPR_SIZE, "<KEYWORD %s : %d,%d..%d,%d>",
+					kw_to_str(tok->kw_value),
+					tok->start_line, tok->start_col,
+					tok->end_line, tok->end_col
+				);
+			}
+			else snprintf(out, REPR_SIZE, "<\?\?\?>");
 			break;
 	}
 	return out;

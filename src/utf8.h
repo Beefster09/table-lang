@@ -1,3 +1,3 @@
 
 
-char* utf8_write(unsigned char* const buffer, int codepoint);
+char* utf8_write(char* const buffer, int codepoint);
