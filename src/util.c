@@ -3,7 +3,7 @@
 #include "colors.h"
 
 TermColor line_number_color = TERM_FG_GRAY;
-TermColor pointer_color = TERM_FG_LGREEN;
+TermColor pointer_color = TERM_FG_LYELLOW;
 
 void show_error_line(FILE* stream, const char* line, int line_no, int start_col, int end_col) {
 	color_fprintf(stream, line_number_color, "% 5d |\t", line_no);

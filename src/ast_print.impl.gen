@@ -1,0 +1,147 @@
+#!/usr/bin/env python3
+
+import os.path
+import pprint
+import re
+import sys
+
+AST_INDENT = ' ' * 2
+
+def debug(*args, **kwargs):
+    print(*args, **kwargs, file=sys.stderr)
+
+TYPE_FORMATS = {
+    ('char', '*'):      '\\"%s\\"',
+    ('int',):           '%d',
+    ('intmax_t',):      '%lld',
+    ('long', 'double'): '%Lg',
+    ('double',):        '%g',
+    ('char',):          "'%c'",
+    ('bool',):          '%s',
+    ('void', '*'):      '%p',
+}
+
+def parse_type(c_type):
+    parts = tuple(c_type.replace('*', ' * ').split())
+    filtered = tuple(p for p in parts if p != 'const')
+    result = {
+        'type': parts,
+        'filtered_type': filtered,
+        'format': TYPE_FORMATS.get(filtered),
+        'is_primitive': filtered in TYPE_FORMATS,
+        'filter_l': '',
+        'filter_r': '? "true" : "false"' if filtered[0] == 'bool' else '',
+        'is_node': filtered[0].startswith('AST_') and filtered[-1] == '*',
+    }
+    if result['is_node'] or filtered[:2] == ('char', '*'):
+        result['is_array'] = filtered[-1] == '*' and filtered[-2] == '*' and filtered[-3] != '*'
+    else:
+        result['is_array'] = filtered[-1] == '*' and filtered[-2] != '*'
+
+    return result
+
+node_start = re.compile(r"^\s*typedef\s+struct\s+(NODE_\w+)")
+node_field = re.compile(r"^\s*([\w\s]+\**)\s*\b(\w+);")
+node_end = re.compile(r"^\s*}\s*AST_(\w+)\s*;")
+
+node_types = {}
+
+ast_nodes_h = os.path.join(os.path.dirname(__file__), 'ast_nodes.h')
+
+with open(ast_nodes_h) as f:
+    fs = iter(f)
+    for line in fs:
+        match_start = node_start.match(line)
+        if match_start:
+            tag = match_start.group(1)
+            node_type = {'tag': tag, 'fields': {}}
+            for line in fs:
+                match_end = node_end.match(line)
+                if match_end:
+                    node_type['name'] = match_end.group(1)
+                    node_types[tag] = node_type
+                    break
+                match_field = node_field.match(line)
+                if match_field:
+                    node_type['fields'][match_field.group(2)] = parse_type(match_field.group(1))
+
+debug(pprint.pformat(node_types))
+
+def indent(c_indent=1, offset=0):
+    print('\t' * c_indent, f'for (int j = -{offset}; j < ident; j++) fprintf(stream, "{AST_INDENT}");', sep='')
+
+print("static void print_ast_node(FILE* stream, const AST_Node* node, int ident) {")
+
+print('\tif (!node) {')
+print('\t\tfprintf(stream, "<null>\\n");')
+print('\t\treturn;')
+print('\t}')
+print()
+
+# Node type name and position information
+print('\tswitch (node->node_type) {')
+for tag, node in sorted(node_types.items()):
+    print(f'\t\tcase {tag}: fprintf(stream, "{node["name"]}"); break;')
+print('\t\tdefault: fprintf(stream, "<#%08x>", node->node_type);')
+print('\t}')
+print('\tfprintf(stream, " (%d,%d..%d,%d)",')
+print('\t\tnode->start_line, node->start_col,')
+print('\t\tnode->end_line, node->end_col);')
+print()
+
+print('\tswitch (node->node_type) {')
+for tag, node in sorted(node_types.items()):
+    print(f'\t\tcase {tag}:', end='')
+    fields = node['fields']
+    node_type = 'AST_' + node['name']
+    if fields:
+        casted = node['name'].lower() + '_node'
+        print('{')
+        print(f'\t\t\t{node_type}* {casted} = ({node_type}*) node;')
+
+        if len(fields) == 1 and list(fields.values())[0]['is_primitive']:
+            for name, info in fields.items():
+                print(
+                    f'\t\t\tfprintf(stream, " {{ {name} = {info["format"]} }}\\n",'
+                    f' {info["filter_l"]}{casted}->{name}{info["filter_r"]});'
+                )
+        else:
+            print('\t\t\tfprintf(stream, " {\\n");')
+            for name, info in fields.items():
+                indent(3, 1)
+                if info['is_primitive']:
+                    print(f'\t\t\tfprintf(stream, "{name} = {info["format"]}\\n",'
+                        f' {info["filter_l"]}{casted}->{name}{info["filter_r"]});')
+                elif info['is_array']:
+                    print(f'\t\t\tfprintf(stream, "{name} = [\\n");')
+                    print('\t\t\t{')
+                    print(f'\t\t\t\tint arr_len = sb_count({casted}->{name});')
+                    print('\t\t\t\tfor (int i = 0; i < arr_len; i++) {')
+                    indent(5, 2)
+                    if info['is_node']:
+                        print(f'\t\t\t\t\tprint_ast_node(stream, (AST_Node*) {casted}->{name}[i], ident + 2);')
+                    elif info['filtered_type'][:-1] in TYPE_FORMATS:
+                        fmt = TYPE_FORMATS[info['filtered_type'][:-1]]
+                        print(f'\t\t\t\t\tfprintf(stream, "{fmt}\\n",'
+                            f' {info["filter_l"]}{casted}->{name}[i]{info["filter_r"]});')
+                    else:
+                        print('\t\t\t\t\tfprintf(stream, "\\?\\?\\?\\n");')
+                    print('\t\t\t\t}')
+                    print('\t\t\t}')
+                    indent(3, 1)
+                    print('\t\t\tfprintf(stream, "]\\n");')
+                elif info['is_node']:
+                    print(f'\t\t\tfprintf(stream, "{name} = ");')
+                    print(f'\t\t\tprint_ast_node(stream, (AST_Node*) {casted}->{name}, ident + 1);')
+                else:
+                    print(f'\t\t\tfprintf(stream, "{name} = \\?\\?\\?\\n");')
+            indent(3, 0)
+            print('\t\t\tfprintf(stream, "}\\n");')
+        print('\t\t} break;')
+        print()
+    else:
+        print('fprintf(stream, "\\n"); break;')
+print('\t\tdefault: fprintf(stream, " \\?\\?\\?\\n");')
+print('\t}')
+
+print("}")

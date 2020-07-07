@@ -1,0 +1,18 @@
+#!/usr/bin/env python3
+
+import os
+import os.path
+import sys
+
+rule_dir = os.path.join(os.path.dirname(__file__), 'rules')
+
+def dump_prototypes(path):
+    with open(path) as f:
+        for line in f:
+            if line.startswith("static AST_"):
+                print(line.rstrip(' {\n') + ';')
+
+with os.scandir(rule_dir) as directory:
+    for entry in directory:
+        if entry.name.endswith('.h') and entry.is_file():
+            dump_prototypes(entry.path)

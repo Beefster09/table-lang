@@ -18,7 +18,7 @@
 struct _lex_state {
 	Token token_buf[MAX_LOOKAHEAD];
 	FILE* src;
-	unsigned int next_tok, tok_count;
+	unsigned int next_tok, tokens_buffered, total_tokens_emitted;
 	unsigned int line_no, column;
 	void* arena_block; // The arena used for literal text for tokens, raw lines, and strings
 	char* next_literal;  // Rolling pointer used for storing
@@ -155,7 +155,7 @@ static int read_utf8_cont(Lexer self, int first, char** text_ptr) {
 #define FWD_UTF8() do { FWD(); if (cur_ch > ASCII_MAX) UTF8(); } while (0)
 
 static void lexer_emit_token(Lexer self) {
-	Token* current = &self->token_buf[(self->next_tok + self->tok_count++) % MAX_LOOKAHEAD];
+	Token* current = &self->token_buf[(self->next_tok + self->tokens_buffered++) % MAX_LOOKAHEAD];
 	bool raw_string = false;
 	int cur_ch = 0;
 
@@ -168,7 +168,11 @@ static void lexer_emit_token(Lexer self) {
 	char* text_ptr = self->next_literal;
 	FWD();
 	switch (cur_ch) {
-		case EOF: EMIT(TOK_EOF);
+		case EOF: {
+			current->type = TOK_EOF;
+			strcpy(current->literal_text, "<EOF>");
+			return;
+		}
 		case '\n': emit_eol:
 			current->end_line++;
 			current->end_col = 0;
@@ -544,6 +548,14 @@ static void lexer_emit_token(Lexer self) {
 					current->kw_value = kw;
 					EMIT(/* TOK_KEYWORD | */ kw);
 				}
+				else if (strcmp(current->literal_text, "true") == 0) {
+					current->bool_value = true;
+					EMIT(TOK_BOOL);
+				}
+				else if (strcmp(current->literal_text, "false") == 0) {
+					current->bool_value = false;
+					EMIT(TOK_BOOL);
+				}
 				else {
 					current->str_value = current->literal_text;
 					EMIT(TOK_IDENT);
@@ -557,17 +569,25 @@ static void lexer_emit_token(Lexer self) {
 #undef BACK
 #undef EMIT
 
-Token lexer_peek_token(Lexer self, unsigned int offset) {
+Token lexer_peek_token(Lexer self, int offset) {
+	if (offset < 0) {
+		// check that the token exists and has not yet been overwritten
+		if (self->total_tokens_emitted + offset >= 0
+				&& self->tokens_buffered - offset < MAX_LOOKAHEAD ) {
+			return self->token_buf[(self->next_tok + MAX_LOOKAHEAD + offset) % MAX_LOOKAHEAD];
+		}
+		else return (Token) { .type = TOK_EMPTY };
+	}
 	if (offset >= MAX_LOOKAHEAD) return (Token) { .type = TOK_ERROR };
-	while (offset + 1 > self->tok_count) lexer_emit_token(self);
+	while (offset + 1 > self->tokens_buffered) lexer_emit_token(self);
 	return self->token_buf[(self->next_tok + offset) % MAX_LOOKAHEAD];
 }
 
 Token lexer_pop_token(Lexer self) {
-	if (!self->tok_count) lexer_emit_token(self);
+	if (!self->tokens_buffered) lexer_emit_token(self);
 	Token* result = &self->token_buf[self->next_tok];
 	self->next_tok = (self->next_tok + 1) % MAX_LOOKAHEAD;
-	self->tok_count--;
+	self->tokens_buffered--;
 	return *result;
 }
 

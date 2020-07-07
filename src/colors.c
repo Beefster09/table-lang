@@ -1,11 +1,20 @@
 
+#if __linux__
+	#if !(_POSIX_C_SOURCE >= 1 || _XOPEN_SOURCE || _POSIX_SOURCE)
+		#define _XOPEN_SOURCE 700
+	#endif
+	#include <unistd.h>
+#else
+	#define isatty(X) 0
+#endif
+
 #include <stdio.h>
 #include <stdarg.h>
 #include <stdbool.h>
 
 #include "colors.h"
 
-bool colors_enabled = true;
+bool colors_enabled = false;
 
 const char* const clear = "\x1b[0m";
 
@@ -61,20 +70,20 @@ void color_fprintf(FILE* stream, TermColor color, const char* format, ...) {
 	color_start(stream, color);
 	va_list args;
 	va_start(args, format);
-	int count = vfprintf(stream, format, args);
+	vfprintf(stream, format, args);
 	va_end(args);
 	if(color & (FG_BIT | BG_BIT)) color_end(stream);
 }
 
 void color_start(FILE* stream, TermColor color) {
-	if (colors_enabled) {
+	if (colors_enabled && isatty(fileno(stream))) {
 		if (color & FG_BIT) fprintf(stream, "%s", fg_table[(color & FG_MASK) >> FG_SHIFT]);
 		if (color & BG_BIT) fprintf(stream, "%s", bg_table[(color & BG_MASK) >> BG_SHIFT]);
 	}
 }
 
 void color_end(FILE* stream) {
-	if (colors_enabled) fprintf(stream, "%s", clear);
+	if (colors_enabled && isatty(fileno(stream))) fprintf(stream, "%s", clear);
 }
 
 size_t color_snprintf(char* buffer, size_t len, TermColor color, const char* format, ...) {
@@ -110,4 +119,13 @@ size_t color_snprintf(char* buffer, size_t len, TermColor color, const char* for
 		total += count;
 	}
 	return total;
+}
+
+
+void color_enable() {
+	colors_enabled = true;
+}
+
+void color_disable() {
+	colors_enabled = false;
 }

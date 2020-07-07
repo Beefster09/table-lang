@@ -15,9 +15,9 @@ top_level_stmt:
 import: "import" (identifier "=")? (qualname | string) EOL
 
 const_def:
-    "pub"? "const" identifier "=" expression EOL
+    "pub"? "const" const_def_line
     | "pub"? "const" "{" const_def_line+ "}"
-const_def_line: identifier "=" expression EOL
+const_def_line: identifier (":" type?) "=" expression EOL
 
 type_alias: "pub"? "type" identifer ":" type EOL
 

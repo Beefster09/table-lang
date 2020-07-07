@@ -1,6 +1,8 @@
 #pragma once
 
 #include <stdint.h>
+#include <stdbool.h>
+#include <stdio.h>
 
 typedef struct _node_tag NodeTag;
 
@@ -15,7 +17,7 @@ typedef enum _node_type {
 } NodeType;
 
 #define AST_NODE_COMMON_FIELDS \
-    NodeType type; \
+    NodeType node_type; \
     const char* src_file; \
     NodeTag* tags; \
     unsigned int start_line, start_col, end_line, end_col;
@@ -25,3 +27,5 @@ typedef struct _empty_node {
 } AST_Node;
 
 #include "ast_nodes.h"
+
+void print_ast(FILE* stream, const AST_Node* root);

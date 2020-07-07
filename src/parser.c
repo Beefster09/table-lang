@@ -1,6 +1,7 @@
 
 #include <string.h>
 #include <stdio.h>
+#include <assert.h>
 
 #include "lexer.h"
 #include "parser.h"
@@ -49,21 +50,25 @@ static size_t size_table[] = {
     0
 };
 
-static AST_Node* node_create(Parser self, NodeType type) {
-	if (type >= NODE_MAX || type <= NODE_EMPTY) return 0;
-	size_t sz = size_table[type];
-	if (!self->arena_current || self->arena_current - sb_last(self->arenas) + sz > ARENA_SIZE) {
+static inline void* arena_alloc(Parser self, size_t n_bytes) {
+	if (!self->arena_current || self->arena_current - sb_last(self->arenas) + n_bytes > ARENA_SIZE) {
 		self->arena_current = calloc(ARENA_SIZE, 1);  // ensure all nodes from this arena are zeroed out
-		if (!self->arena_current) return 0;
+		assert(self->arena_current && "Unable to allocate next block of arena!!!");
 		sb_push(self->arenas, self->arena_current);
 	}
-	AST_Node* node = self->arena_current;
+	void* result = self->arena_current;
 	self->arena_current = (void*) (
 		((char*) self->arena_current)
-		// align the next node for pointers (assuming 2^n size)
-		+ ((sz & (sizeof(void*) - 1))? (sz | (sizeof(void*) - 1)) + 1 : sz)
+		// align the next node for pointers (assuming pointers have 2^n size)
+		+ ((n_bytes & (sizeof(void*) - 1))? (n_bytes | (sizeof(void*) - 1)) + 1 : n_bytes)
 	);
-	node->type = type;
+	return result;
+}
+
+static AST_Node* node_create(Parser self, NodeType type) {
+	if (type >= NODE_MAX || type <= NODE_EMPTY) return 0;
+	AST_Node* node = arena_alloc(self, size_table[type]);
+	node->node_type = type;
 	node->src_file = self->src;
 	return node;
 }
@@ -92,7 +97,7 @@ static AST_Node* node_create(Parser self, NodeType type) {
 #define SYNTAX_ERROR(fmt, ...) do { \
 	Token _top_token_ = TOP(); \
 	const char** lines = lexer_get_lines(self->lex, 0); \
-	if (RULE_DEBUG) fprintf(stderr, "(From rule '%s')\n", __func__); \
+	if (RULE_DEBUG) fprintf(stderr, "(From rule '%s', line %d)\n", __func__, __LINE__); \
 	fprintf(stderr, "Syntax error in '%s' on line %d, column %d: " fmt "\n", \
 		self->src , _top_token_.start_line, _top_token_.start_col, ##__VA_ARGS__ ); \
 	show_error_line(stderr, \
@@ -104,63 +109,53 @@ static AST_Node* node_create(Parser self, NodeType type) {
 } while (0)
 #define _token_ _top_token_.literal_text  // the literal text of the top token (for syntax errors)
 
+#define EXPECT(TTYPE, fmt, ...) do { \
+	if (TOP().type != TTYPE) SYNTAX_ERROR(fmt, ##__VA_ARGS__); \
+} while (0)
+
+#define APPLY(X, RULE, ...) do { \
+	AST_Node* _result_ = RULE(self, ##__VA_ARGS__); \
+	if (!_result_) return 0; \
+	X = _result_; \
+} while (0)
+
+#define APPEND(ARR, RULE, ...) do { \
+	AST_Node* _result_ = RULE(self, ##__VA_ARGS__); \
+	if (!_result_) return 0; \
+	sb_push(ARR, _result_); \
+} while (0)
+
+#define RETURN(N) do { \
+	Token _prev_token_ = lexer_peek_token(self->lex, -1); \
+	N->end_line = _prev_token_.end_line; \
+	N->end_col = _prev_token_.end_col; \
+	return N; \
+} while (0)
+
 // Disable warnings about switches using values from other enums
 #pragma GCC diagnostic ignored "-Wswitch"
 
-static AST_Qualname* qualname(Parser self) {
-	NEW_NODE(qn, NODE_QUALNAME);
-	if (TOP().type != TOK_IDENT) SYNTAX_ERROR("Unexpected token in qualified name: %s", _token_);
-	do {
-		sb_push(qn->parts, POP().str_value);
-		if (TOP().type != TOK_DOT) return qn;
-		POP();
-	} while (1);
-}
+#include "rule_prototypes.gen.h"
 
-static AST_Import* import(Parser self) {
-	NEW_NODE(imp, NODE_IMPORT);
-	POP(); // import
-	Token tok = TOP();
-	switch (tok.type) {
-		case TOK_IDENT: break; // valid, but not sure which form this is
-		case TOK_EOL: SYNTAX_ERROR("import statement is missing its target");
-		default: SYNTAX_ERROR("Invalid target of import");
-	}
-	// Note: first token is an identifier
-	switch (LOOKAHEAD(1).type) {
-		case TOK_EOL:
-		case TOK_DOT: {  // qualified name form
-			imp->qualified_name = qualname(self);  // TODO: decide what should be imported
-			if (!imp->qualified_name) return 0;
-			if (TOP().type != TOK_EOL) SYNTAX_ERROR("Expected end-of-line after qualified name import");
-			return imp;
-		}
-		case TOK_ASSIGN: {  // localname form
-			imp->local_name = POP().str_value;
-			POP();  // =
-			switch(TOP().type) {
-				case TOK_STRING:
-					imp->imported_file = POP().str_value;
-					if (TOP().type != TOK_EOL) SYNTAX_ERROR("Expected end-of-line after pathname import");
-					return imp;
-				case TOK_IDENT:
-					imp->qualified_name = qualname(self);
-					if (!imp->qualified_name) return 0;
-					if (TOP().type != TOK_EOL) SYNTAX_ERROR("Expected end-of-line after localized import");
-					return imp;
-				case TOK_EOL: SYNTAX_ERROR("localized import statement is missing its target");
-				default: SYNTAX_ERROR("Invalid target of localized import");
-			}
-			break;
-		}
-		default: SYNTAX_ERROR("");
-	}
+#include "rules/atoms.h"
+#include "rules/toplevel.h"
+
+static AST_Function* func_def(Parser self) {
+	return 0;
 }
 
 AST_Node* parser_execute(Parser self) {
 	NEW_NODE(module, NODE_MODULE);
-
 	bool is_pub = false;
+
+	#define APPEND_DECL(RULE) \
+		if (is_pub) { \
+			APPEND(module->public_decls, RULE); \
+		} \
+		else { \
+			APPEND(module->private_decls, RULE); \
+		}
+
 	while (1) {
 		Token tok = TOP();
 		switch (tok.type) {
@@ -169,18 +164,57 @@ AST_Node* parser_execute(Parser self) {
 				is_pub = true;
 				break;
 			case KW_IMPORT: {
-				if (is_pub) SYNTAX_ERROR("'pub' cannot be applied to import statement");
-				AST_Import* imp = import(self);
-				if (!imp) return 0;
-				sb_push(module->imports, imp);
+				if (is_pub) SYNTAX_ERROR("'pub' cannot be applied to import statements");
+				APPEND(module->imports, import);
 			} break;
+			// case KW_FUNC: APPEND_DECL(func_def);
+			case KW_CONST: {
+				POP(); // 'const'
+				if (TOP().type == TOK_LBRACE) {
+					// multiple constants
+					POP(); // '{'
+					EXPECT(TOK_EOL, "Expected end of line to begin const block.");
+					POP(); // EOL
+					while (TOP().type != TOK_RBRACE) {
+						if (TOP().type == TOK_EOL) { // skip empty lines
+							POP();
+							continue;
+						}
+						APPEND_DECL(const_def);
+						EXPECT(TOK_EOL, "Expected end of line after block constant");
+						POP(); // EOL
+					}
+					POP(); // '}'
+					EXPECT(TOK_EOL, "Expected end of line after const block");
+				}
+				else {
+					APPEND_DECL(const_def);
+					EXPECT(TOK_EOL, "Expected end of line after const");
+				}
+				is_pub = false;
+			} break;
+			// case KW_STRUCT: APPEND_DECL(struct_def);
+			// case KW_TABLE: APPEND_DECL(table_def);
 			case TOK_EOL:
 				if (is_pub) SYNTAX_ERROR("'pub' must by followed by a top-level declaration");
 				break;
-			default: SYNTAX_ERROR("Unexpected token: %s", _token_);
+			case TOK_EOF:
+				if (is_pub) SYNTAX_ERROR("'pub' must be followed by a top-level declaration");
+				RETURN(module);
+			default: SYNTAX_ERROR("Top level declarations cannot begin with %s", _token_);
 		}
 		POP();
 	}
 
-	return (AST_Node*) module;
+	fprintf(stderr, "This code should be unreachable: %s, line %d", __func__, __LINE__);
+	return 0;
+}
+
+// === AST Printing ===
+
+#include "ast_print.impl.gen.h"
+
+void print_ast(FILE* stream, const AST_Node* root) {
+	fprintf(stream, "From '%s':\n  ", root->src_file);
+	print_ast_node(stream, root, 1);
 }

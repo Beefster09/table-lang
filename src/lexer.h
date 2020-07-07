@@ -80,7 +80,7 @@ void* lexer_get_arena(Lexer);
 /// Returns the array of lines in the file.
 const char** lexer_get_lines(Lexer, int* len);
 
-Token lexer_peek_token(Lexer, unsigned int offset);
+Token lexer_peek_token(Lexer, int offset);
 Token lexer_pop_token(Lexer);
 
 const char* token_repr(const Token*);

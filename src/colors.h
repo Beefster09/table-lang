@@ -47,3 +47,6 @@ void color_fprintf(FILE* stream, TermColor color, const char* format, ...);
 size_t color_snprintf(char* buffer, size_t len, TermColor color, const char* format, ...);
 void color_start(FILE* stream, TermColor color);
 void color_end(FILE* stream);
+
+void color_enable();
+void color_disable();
