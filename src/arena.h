@@ -1,4 +1,4 @@
-
+#pragma once
 #include <stdint.h>
 
 static void* arena_alloc__noabc(void** arena, size_t size) {

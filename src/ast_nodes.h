@@ -64,9 +64,80 @@ typedef struct NODE_STRING {
     const char* value;
 } AST_String;
 
+typedef struct NODE_CHAR {
+    AST_NODE_COMMON_FIELDS
+    Rune value;
+} AST_Char;
+
 typedef struct NODE_CONST {
     AST_NODE_COMMON_FIELDS
     const char* name;
     AST_Type* type;
     AST_Node* expr_value;
 } AST_Const;
+
+typedef struct NODE_BINOP {
+    AST_NODE_COMMON_FIELDS
+    const char* op;
+    AST_Node* lhs;
+    AST_Node* rhs;
+} AST_Binop;
+
+typedef struct NODE_COMPARISON {
+    AST_NODE_COMMON_FIELDS
+    const char** comparisons;
+    AST_Node** operands;
+} AST_ComparisonChain;
+
+typedef struct NODE_UNARY {
+    AST_NODE_COMMON_FIELDS
+    const char* op;
+    AST_Node* expr;
+} AST_Unary;
+
+typedef struct NODE_NOT {
+    AST_NODE_COMMON_FIELDS
+    AST_Node* expr;
+} AST_Not;
+
+typedef struct NODE_AND {
+    AST_NODE_COMMON_FIELDS
+    AST_Node* lhs;
+    AST_Node* rhs;
+} AST_And;
+
+typedef struct NODE_OR {
+    AST_NODE_COMMON_FIELDS
+    AST_Node* lhs;
+    AST_Node* rhs;
+} AST_Or;
+
+typedef struct NODE_ARRAY {
+    AST_NODE_COMMON_FIELDS
+    AST_Node** elements;
+} AST_Array;
+
+typedef struct NODE_KW_ARG {
+	AST_NODE_COMMON_FIELDS
+	const char* name;
+	AST_Node* value;
+} AST_KWArg;
+
+typedef struct NODE_FUNC_CALL {
+    AST_NODE_COMMON_FIELDS
+    AST_Node* func;
+    AST_Node** pos_args;
+    AST_KWArg** kw_args;
+} AST_FuncCall;
+
+typedef struct NODE_SUBSCRIPT {
+    AST_NODE_COMMON_FIELDS
+    AST_Node* array;
+    AST_Node** subscripts;
+} AST_Subscript;
+
+typedef struct NODE_FIELD_ACCESS {
+    AST_NODE_COMMON_FIELDS
+    AST_Node* base;
+    AST_Qualname* field;
+} AST_FieldAccess;

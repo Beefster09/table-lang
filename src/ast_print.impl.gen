@@ -17,6 +17,7 @@ TYPE_FORMATS = {
     ('long', 'double'): '%Lg',
     ('double',):        '%g',
     ('char',):          "'%c'",
+    ('Rune',):          "'%c'",
     ('bool',):          '%s',
     ('void', '*'):      '%p',
 }

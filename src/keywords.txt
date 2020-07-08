@@ -25,5 +25,4 @@ with
 yield
 and
 or
-xor
 not

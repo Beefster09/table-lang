@@ -26,6 +26,8 @@ typedef struct _empty_node {
     AST_NODE_COMMON_FIELDS
 } AST_Node;
 
+typedef int Rune;
+
 #include "ast_nodes.h"
 
 void print_ast(FILE* stream, const AST_Node* root);

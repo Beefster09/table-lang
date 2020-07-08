@@ -648,7 +648,7 @@ From tightest to loosest: (left-associative unless otherwise stated)
 * `^` - exponentiation (right-associative)
 * Unary operators
 * `*`, `/`, `%`, `&`
-* `+`, `-`, `~`, `!`
+* `+`, `-`, `~`
 * `\word` operators
 * `?` - "elvis" / "or else" / null-coalescing operator (non-associative)
 * `x if cond else y` ternary (non-associative)

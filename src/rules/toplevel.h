@@ -12,7 +12,7 @@ static AST_Const* const_def(Parser self) {
             // drop through is intentional
         case TOK_ASSIGN:
             POP();  // '='
-            APPLY(constant->expr_value, expr);
+            APPLY(constant->expr_value, expr, false, 0);
             break;
         default: SYNTAX_ERROR("Expected ':' or '=' after constant name");
     }
@@ -40,7 +40,7 @@ static AST_Import* import(Parser self) {
     switch (LOOKAHEAD(1).type) {
         case TOK_EOL:
         case TOK_DOT: {  // qualified name form
-            APPLY(imp->qualified_name, qualname);  // TODO: decide what should be imported
+            APPLY(imp->qualified_name, qualname, false);  // TODO: decide what should be imported
             EXPECT(TOK_EOL, "Expected end-of-line after qualified name import");
             RETURN(imp);
         }
@@ -53,7 +53,7 @@ static AST_Import* import(Parser self) {
                     EXPECT(TOK_EOL, "Expected end-of-line after pathname import");
                     RETURN(imp);
                 case TOK_IDENT:
-                    APPLY(imp->qualified_name, qualname);
+                    APPLY(imp->qualified_name, qualname, false);
                     EXPECT(TOK_EOL, "Expected end-of-line after localized import");
                     RETURN(imp);
                 case TOK_EOL: SYNTAX_ERROR("localized import statement is missing its target");

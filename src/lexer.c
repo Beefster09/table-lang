@@ -170,7 +170,7 @@ static void lexer_emit_token(Lexer self) {
 	switch (cur_ch) {
 		case EOF: {
 			current->type = TOK_EOF;
-			strcpy(current->literal_text, "<EOF>");
+			current->literal_text = "<EOF>";
 			return;
 		}
 		case '\n': emit_eol:
@@ -253,6 +253,7 @@ static void lexer_emit_token(Lexer self) {
 				BACK();
 				EMIT(TOK_BANG);
 			}
+
 		case '+': current->type = TOK_PLUS; goto handle_operators;
 		case '-': current->type = TOK_MINUS; goto handle_operators;
 		case '*': current->type = TOK_STAR; goto handle_operators;
@@ -572,14 +573,14 @@ static void lexer_emit_token(Lexer self) {
 Token lexer_peek_token(Lexer self, int offset) {
 	if (offset < 0) {
 		// check that the token exists and has not yet been overwritten
-		if (self->total_tokens_emitted + offset >= 0
+		if ((int) self->total_tokens_emitted + offset >= 0
 				&& self->tokens_buffered - offset < MAX_LOOKAHEAD ) {
 			return self->token_buf[(self->next_tok + MAX_LOOKAHEAD + offset) % MAX_LOOKAHEAD];
 		}
 		else return (Token) { .type = TOK_EMPTY };
 	}
 	if (offset >= MAX_LOOKAHEAD) return (Token) { .type = TOK_ERROR };
-	while (offset + 1 > self->tokens_buffered) lexer_emit_token(self);
+	while (offset + 1 > (int) self->tokens_buffered) lexer_emit_token(self);
 	return self->token_buf[(self->next_tok + offset) % MAX_LOOKAHEAD];
 }
 
@@ -588,6 +589,7 @@ Token lexer_pop_token(Lexer self) {
 	Token* result = &self->token_buf[self->next_tok];
 	self->next_tok = (self->next_tok + 1) % MAX_LOOKAHEAD;
 	self->tokens_buffered--;
+	self->total_tokens_emitted++;
 	return *result;
 }
 

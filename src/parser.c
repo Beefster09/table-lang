@@ -94,6 +94,13 @@ static AST_Node* node_create(Parser self, NodeType type) {
 		N->start_col = _top_token_.start_col; \
 	} while (0)
 
+#define NEW_NODE_FROM(N, T, B) \
+	struct T* N = node_create(self, T); \
+	do { \
+		N->start_line = B->start_line; \
+		N->start_col = B->start_col; \
+	} while (0)
+
 #define SYNTAX_ERROR(fmt, ...) do { \
 	Token _top_token_ = TOP(); \
 	const char** lines = lexer_get_lines(self->lex, 0); \
@@ -125,10 +132,20 @@ static AST_Node* node_create(Parser self, NodeType type) {
 	sb_push(ARR, _result_); \
 } while (0)
 
-#define RETURN(N) do { \
+#define FINISH(N) do { \
 	Token _prev_token_ = lexer_peek_token(self->lex, -1); \
-	N->end_line = _prev_token_.end_line; \
-	N->end_col = _prev_token_.end_col; \
+	if (_prev_token_.type) { \
+		N->end_line = _prev_token_.end_line; \
+		N->end_col = _prev_token_.end_col; \
+	} \
+	else { \
+		N->end_line = N->start_line; \
+		N->end_col = N->start_col; \
+	} \
+} while (0)
+
+#define RETURN(N) do { \
+	FINISH(N); \
 	return N; \
 } while (0)
 
@@ -139,6 +156,7 @@ static AST_Node* node_create(Parser self, NodeType type) {
 
 #include "rules/atoms.h"
 #include "rules/toplevel.h"
+#include "rules/expr.h"
 
 static AST_Function* func_def(Parser self) {
 	return 0;
@@ -195,6 +213,9 @@ AST_Node* parser_execute(Parser self) {
 			} break;
 			// case KW_STRUCT: APPEND_DECL(struct_def);
 			// case KW_TABLE: APPEND_DECL(table_def);
+			case TOK_RPAREN: SYNTAX_ERROR("Unmatched parenthesis");
+			case TOK_RBRACE: SYNTAX_ERROR("Unmatched curly brace");
+			case TOK_RSQUARE: SYNTAX_ERROR("Unmatched square bracket");
 			case TOK_EOL:
 				if (is_pub) SYNTAX_ERROR("'pub' must by followed by a top-level declaration");
 				break;

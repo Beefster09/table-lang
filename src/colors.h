@@ -1,4 +1,4 @@
-
+#pragma once
 // ANSI color escapes
 #include <stdint.h>
 #include <stdio.h>
