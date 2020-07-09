@@ -20,6 +20,8 @@ struct _parse_state {
 	Lexer lex;
 	void** arenas;
 	void* arena_current;
+	int error_count;
+	int warning_count;
 };
 
 Parser parser_create(const char* filename) {
@@ -83,7 +85,7 @@ static AST_Node* node_create(Parser self, NodeType type) {
 #pragma GCC diagnostic ignored "-Wincompatible-pointer-types"
 
 #define TOP() lexer_peek_token(self->lex, 0)
-#define LOOKAHEAD(lh) lexer_peek_token(self->lex, lh)
+#define LOOKAHEAD(n) lexer_peek_token(self->lex, n)
 #define POP() lexer_pop_token(self->lex)
 
 #define NEW_NODE(N, T) \

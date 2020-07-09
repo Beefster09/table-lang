@@ -17,8 +17,9 @@
 #endif
 
 int main(int argc, char *argv[]) {
+	int status = 0;
 	setlocale(LC_ALL, "en_US.utf8");
-	if (strncmp(getenv("TERM"), "xterm", 5) == 0) color_enable();
+	if (color_is_supported()) color_enable();
 	if (argc >= 2) {
 		Parser parser = parser_create(argv[1]);
 		if (!parser) {
@@ -31,8 +32,9 @@ int main(int argc, char *argv[]) {
 		}
 		else {
 			color_fprintf(stderr, TERM_FG_RED, "Parsing failed.\n");
+			status = 1;
 		}
 		parser_destroy(parser);
 	}
-	return 0;
+	return status;
 }

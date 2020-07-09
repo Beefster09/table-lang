@@ -213,7 +213,17 @@ Non-nullable variables use their default values if not initialized.
 Nulls do not need to be unwrapped to be used. As long as their value is guaranteed to not be null
 when a non-null value is needed, the use is legal.
 
-`.` safely navigates null values; if the left side is null, then the whole unit is null.
+`null` is "contagious" rather than producing runtime crashes:
+
+- `.` safely navigates null values; if the left side is null, then the whole unit is null.
+    - Note that if an otherwise nullable value is known to be non-null in a certain context, it will
+      automatically be treated as if it were non-nullable
+    - The rationale: I was noticing that Kotlin's `?.` operator behaved a *lot* like `->` in terms
+      of using different syntax for something that isn't really that different. If you wanted to
+      change a variable to/from being nullable, you would have needed something fancier than search
+      and replace to refactor it properly.
+- Nearly all operations are automatically defined for nullables if their non-nullable counterparts
+  are defined. The result of anything non-nullable receiving a `null` will be `null` by default.
 
 Both of these are legal and equivalent:
 
@@ -622,7 +632,7 @@ assuming their default values
 
 It is a compile-time error if the function does not have default.
 
-In all these cases, all arguments *must* be const.
+In all these cases, all parameters of the function *must* be const.
 
 ### Arbitrary Symbolic Operators
 
@@ -650,15 +660,16 @@ From tightest to loosest: (left-associative unless otherwise stated)
 * `*`, `/`, `%`, `&`
 * `+`, `-`, `~`
 * `\word` operators
-* `?` - "elvis" / "or else" / null-coalescing operator (non-associative)
+* `?` - "elvis" / "or else" / null-coalescing operator
 * `x if cond else y` ternary (non-associative)
 * `|`
 * `=>` - anonymous functions (right-associative)
+    - (Am I even going to have these? Function expressions are already possible. Lambdas provide a
+       redundant alternative to existing syntax and are harder to parse.)
 * Comparison operators `==`, `!=`, `<`, `<=`, `>`, and `>=`  (chainable, as in Python)
 * `not`
 * `and`
 * `or`
-* `xor`
 * `,` (not really an operator, but this can matter)
 * Assignments (statement level only, but can chain right-associatively if all lhs's are assignable)
 
@@ -683,6 +694,33 @@ The `#default` directive allows you to override a default argument value for the
 }
 ```
 
+## Some additional things that are well-defined
+
+### Bool * $T
+
+true * x = x
+false * x = (the zero value of T)
+
+### String * Int
+
+"any string" * x = (the string repeated 'x' times)
+
+### $A (any operator) $B?
+
+x (whatever) null = null
+x (whatever) y = whatever it would have equalled normally
+
+This applies to boolean logic as well, giving three-value logic
+
+This does *not* apply to equality operators (`==` and `!=`).
+
+Nullables are incompatible with comparison operators (`<`, `<=`, `>`, `>=`)
+
+### function_call(... $T? ...)
+
+A function call that doesn't normally accept nullables in a particular argument will return null if
+given null for that argument
+
 # Type Coercion Rules
 
 `X`, bigger `X` -> bigger `X`
@@ -690,8 +728,8 @@ The `#default` directive allows you to override a default argument value for the
 `Int`, `Float` -> `Float`
 `X`, `Bool` -> `Bool`
 
-@x = y -> @y if x and y point to *exactly* the same type, including `?` and `!` modifiers
-
+Rereference levels will be added to the right side of an assignment to match the left side
+if they are compatible types.
 
 # Context
 

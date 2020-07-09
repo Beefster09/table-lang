@@ -6,9 +6,13 @@ import re
 import sys
 
 AST_INDENT = ' ' * 2
+INLINE_ARRAY_MAX_SIZE = 5
 
 def debug(*args, **kwargs):
     print(*args, **kwargs, file=sys.stderr)
+
+def code(tabs, *parts, **kw):
+    print('\t' * tabs, *parts, sep='', **kw)
 
 TYPE_FORMATS = {
     ('char', '*'):      '\\"%s\\"',
@@ -24,7 +28,7 @@ TYPE_FORMATS = {
 
 def parse_type(c_type):
     parts = tuple(c_type.replace('*', ' * ').split())
-    filtered = tuple(p for p in parts if p != 'const')
+    filtered = tuple(p for p in parts if p not in ('const', 'ARRAY', 'MAP'))
     result = {
         'type': parts,
         'filtered_type': filtered,
@@ -32,17 +36,15 @@ def parse_type(c_type):
         'is_primitive': filtered in TYPE_FORMATS,
         'filter_l': '',
         'filter_r': '? "true" : "false"' if filtered[0] == 'bool' else '',
-        'is_node': filtered[0].startswith('AST_') and filtered[-1] == '*',
+        'is_node': filtered[0].startswith('AST_') and filtered[1] == '*',
+        'is_array': parts[-1] == 'ARRAY',
+        'is_map': parts[-1] == 'MAP',
     }
-    if result['is_node'] or filtered[:2] == ('char', '*'):
-        result['is_array'] = filtered[-1] == '*' and filtered[-2] == '*' and filtered[-3] != '*'
-    else:
-        result['is_array'] = filtered[-1] == '*' and filtered[-2] != '*'
 
     return result
 
 node_start = re.compile(r"^\s*typedef\s+struct\s+(NODE_\w+)")
-node_field = re.compile(r"^\s*([\w\s]+\**)\s*\b(\w+);")
+node_field = re.compile(r"^\s*([\w\s\*]+)\s*\b(\w+);")
 node_end = re.compile(r"^\s*}\s*AST_(\w+)\s*;")
 
 node_types = {}
@@ -68,81 +70,108 @@ with open(ast_nodes_h) as f:
 
 debug(pprint.pformat(node_types))
 
-def indent(c_indent=1, offset=0):
-    print('\t' * c_indent, f'for (int j = -{offset}; j < ident; j++) fprintf(stream, "{AST_INDENT}");', sep='')
+def indent(tabs=1, offset=0):
+    code(tabs, f'for (int j = indent + {offset}; j > 0; j--) fprintf(stream, "{AST_INDENT}");')
 
-print("static void print_ast_node(FILE* stream, const AST_Node* node, int ident) {")
+print("static void print_ast_node(FILE* stream, const AST_Node* node, int indent) {")
 
-print('\tif (!node) {')
-print('\t\tfprintf(stream, "<null>\\n");')
-print('\t\treturn;')
-print('\t}')
+code(1, 'if (!node) {')
+code(2,   'fprintf(stream, "<null>\\n");')
+code(2,   'return;')
+code(1, '}')
 print()
 
 # Node type name and position information
-print('\tswitch (node->node_type) {')
+code(1, 'switch (node->node_type) {')
 for tag, node in sorted(node_types.items()):
-    print(f'\t\tcase {tag}: fprintf(stream, "{node["name"]}"); break;')
-print('\t\tdefault: fprintf(stream, "<#%08x>", node->node_type);')
-print('\t}')
-print('\tfprintf(stream, " (%d,%d..%d,%d)",')
-print('\t\tnode->start_line, node->start_col,')
-print('\t\tnode->end_line, node->end_col);')
+    code(2, f'case {tag}: fprintf(stream, "{node["name"]}"); break;')
+code(2,   'default: fprintf(stream, "<#%08x>", node->node_type);')
+code(1, '}')
+code(1, 'fprintf(stream, " (%d,%d..%d,%d)",')
+code(2,         'node->start_line, node->start_col,')
+code(2,         'node->end_line, node->end_col);')
 print()
 
-print('\tswitch (node->node_type) {')
+code(1, 'switch (node->node_type) {')
 for tag, node in sorted(node_types.items()):
-    print(f'\t\tcase {tag}:', end='')
+    code(2, f'case {tag}:', end='')
     fields = node['fields']
     node_type = 'AST_' + node['name']
     if fields:
         casted = node['name'].lower() + '_node'
         print('{')
-        print(f'\t\t\t{node_type}* {casted} = ({node_type}*) node;')
+        code(3, f'{node_type}* {casted} = ({node_type}*) node;')
 
         if len(fields) == 1 and list(fields.values())[0]['is_primitive']:
             for name, info in fields.items():
-                print(
-                    f'\t\t\tfprintf(stream, " {{ {name} = {info["format"]} }}\\n",'
-                    f' {info["filter_l"]}{casted}->{name}{info["filter_r"]});'
-                )
+                if info['is_array']:
+                    code(3, '{')
+                    code(4, f'int arr_len = sb_count({casted}->{name});')
+                    code(4, f'bool is_inline = arr_len <= {INLINE_ARRAY_MAX_SIZE};')
+                    code(4, r'const char* sep = is_inline? ", " : "\\n";')
+                    code(4, f'fprintf(stream, " {{ {name} = [%s", is_inline? " " : "\\n");')
+                    code(4, 'for (int i = 0; i < arr_len; i++) {')
+                    code(5, 'if (!is_inline) {')
+                    indent(6, 1)
+                    code(5, '}')
+                    code(5, f'fprintf(stream, "{info["format"]}%s",'
+                                  f' {info["filter_l"]}{casted}->{name}[i]{info["filter_r"]},')
+                    code(6,         '(!is_inline || i + 1 < arr_len) ? sep : " " );')
+                    code(4, '}')
+                    code(4, 'if (!is_inline) {')
+                    indent(5, 1)
+                    code(4, '}')
+                    code(4, 'fprintf(stream, "] }\\n");')
+                    code(3, '}')
+                else:
+                    code(3,
+                        f'fprintf(stream, " {{ {name} = {info["format"]} }}\\n",'
+                        f' {info["filter_l"]}{casted}->{name}{info["filter_r"]});'
+                    )
         else:
-            print('\t\t\tfprintf(stream, " {\\n");')
+            code(3, 'fprintf(stream, " {\\n");')
             for name, info in fields.items():
                 indent(3, 1)
-                if info['is_primitive']:
-                    print(f'\t\t\tfprintf(stream, "{name} = {info["format"]}\\n",'
-                        f' {info["filter_l"]}{casted}->{name}{info["filter_r"]});')
-                elif info['is_array']:
-                    print(f'\t\t\tfprintf(stream, "{name} = [\\n");')
-                    print('\t\t\t{')
-                    print(f'\t\t\t\tint arr_len = sb_count({casted}->{name});')
-                    print('\t\t\t\tfor (int i = 0; i < arr_len; i++) {')
-                    indent(5, 2)
+                if info['is_array']:
+                    inline_max = 0 if info['is_node'] else INLINE_ARRAY_MAX_SIZE
+                    code(3, '{')
+                    code(4, f'int arr_len = sb_count({casted}->{name});')
+                    code(4, f'bool is_inline = arr_len <= {inline_max};')
+                    code(4, r'const char* sep = is_inline? ", " : "\\n";')
+                    code(4, f'fprintf(stream, "{name} = [%s", is_inline? " " : "\\n");')
+                    code(4, 'for (int i = 0; i < arr_len; i++) {')
+                    code(5, 'if (!is_inline) {')
+                    indent(6, 2)
+                    code(5, '}')
                     if info['is_node']:
-                        print(f'\t\t\t\t\tprint_ast_node(stream, (AST_Node*) {casted}->{name}[i], ident + 2);')
-                    elif info['filtered_type'][:-1] in TYPE_FORMATS:
-                        fmt = TYPE_FORMATS[info['filtered_type'][:-1]]
-                        print(f'\t\t\t\t\tfprintf(stream, "{fmt}\\n",'
-                            f' {info["filter_l"]}{casted}->{name}[i]{info["filter_r"]});')
+                        code(5, f'print_ast_node(stream, (AST_Node*) {casted}->{name}[i], indent + 2);')
+                    elif info['is_primitive'] or info['filtered_type'][-1] == '*':
+                        code(5, f'fprintf(stream, "{info.get("format", "%p")}%s",'
+                                      f' {info["filter_l"]}{casted}->{name}[i]{info["filter_r"]},')
+                        code(6,         '(!is_inline || i + 1 < arr_len) ? sep : " " );')
                     else:
-                        print('\t\t\t\t\tfprintf(stream, "\\?\\?\\?\\n");')
-                    print('\t\t\t\t}')
-                    print('\t\t\t}')
-                    indent(3, 1)
-                    print('\t\t\tfprintf(stream, "]\\n");')
+                        code(5, 'fprintf(stream, "?%s", (!is_inline || i + 1 < arr_len) ? sep : " ");')
+                    code(4, '}')
+                    code(4, 'if (!is_inline) {')
+                    indent(5, 1)
+                    code(4, '}')
+                    code(4, 'fprintf(stream, "]\\n");')
+                    code(3, '}')
+                elif info['is_primitive']:
+                    code(3, f'fprintf(stream, "{name} = {info["format"]}\\n",'
+                        f' {info["filter_l"]}{casted}->{name}{info["filter_r"]});')
                 elif info['is_node']:
-                    print(f'\t\t\tfprintf(stream, "{name} = ");')
-                    print(f'\t\t\tprint_ast_node(stream, (AST_Node*) {casted}->{name}, ident + 1);')
+                    code(3, f'fprintf(stream, "{name} = ");')
+                    code(3, f'print_ast_node(stream, (AST_Node*) {casted}->{name}, indent + 1);')
                 else:
-                    print(f'\t\t\tfprintf(stream, "{name} = \\?\\?\\?\\n");')
+                    code(3, f'fprintf(stream, "{name} = \\?\\?\\?\\n");')
             indent(3, 0)
-            print('\t\t\tfprintf(stream, "}\\n");')
-        print('\t\t} break;')
+            code(3, 'fprintf(stream, "}\\n");')
+        code(2, '} break;')
         print()
     else:
         print('fprintf(stream, "\\n"); break;')
-print('\t\tdefault: fprintf(stream, " \\?\\?\\?\\n");')
-print('\t}')
+code(2, 'default: fprintf(stream, " \\?\\?\\?\\n");')
+code(1, '}')
 
 print("}")
