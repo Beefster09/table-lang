@@ -119,7 +119,8 @@ expression:
     | async_call
     | await_expr
     | lambda
-    | "type" "(" type ")"
+    | "type" type   // has very greedy precedence
+    | "type" "<" type ">"  // doesn't bleed outside
     | "(" expression ")"
     | "{" statement+ "}"
 
@@ -141,7 +142,7 @@ type:
     | type "[" array_shape? "]"
     | type ("|" type)+
     | type? "=>" type  // Right associative
-    | "(" ")" "=>" type  // Right associative
+    | ("(" ")")? "=>" type  // Right associative
     | "(" type ("," type)* ")" "=>" type
     | "(" type ")"
     | "..."  // Open union?

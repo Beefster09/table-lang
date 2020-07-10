@@ -57,7 +57,7 @@ static bool is_comparison(int type) {
 static AST_Node* expr(Parser self, bool allow_eol, int precedence_before) {
 	AST_Node* sub_expr = 0;
 	bool ternary_seen = TERNARY_PRECEDENCE == precedence_before;  // to make ternary non-associative
-	do {
+	while (1) {
 		switch (TOP().type) {
 			case TOK_IDENT:
 				if (!sub_expr && LOOKAHEAD(1).type == TOK_ARROW) {
@@ -179,10 +179,10 @@ static AST_Node* expr(Parser self, bool allow_eol, int precedence_before) {
 				if (!sub_expr) SYNTAX_ERROR("Comparison operator is missing left side expression");
 				else if (CMP_PRECEDENCE > precedence_before) {
 					NEW_NODE_FROM(chain, NODE_COMPARISON, sub_expr);
-					sb_push(chain->operands, sub_expr);
+					arrpush(chain->operands, sub_expr);
 					do {
 						const char* cmp = POP().literal_text;  // TODO: consider enum representations
-						sb_push(chain->comparisons, cmp);
+						arrpush(chain->comparisons, cmp);
 						APPEND(chain->operands, expr, allow_eol, CMP_PRECEDENCE);
 					} while (is_comparison(TOP().type));
 					FINISH(chain);
@@ -270,7 +270,7 @@ static AST_Node* expr(Parser self, bool allow_eol, int precedence_before) {
 				// Drop through is intentional
 			default: SYNTAX_ERROR("Expected an expression here");
 		}
-	} while (1);
+	}
 }
 
 

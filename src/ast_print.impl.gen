@@ -17,6 +17,7 @@ def code(tabs, *parts, **kw):
 TYPE_FORMATS = {
     ('char', '*'):      '\\"%s\\"',
     ('int',):           '%d',
+    ('size_t',):        '%zd',
     ('intmax_t',):      '%lld',
     ('long', 'double'): '%Lg',
     ('double',):        '%g',
@@ -94,7 +95,7 @@ print()
 
 code(1, 'switch (node->node_type) {')
 for tag, node in sorted(node_types.items()):
-    code(2, f'case {tag}:', end='')
+    code(2, f'case {tag}:', end=' ')
     fields = node['fields']
     node_type = 'AST_' + node['name']
     if fields:
@@ -106,7 +107,7 @@ for tag, node in sorted(node_types.items()):
             for name, info in fields.items():
                 if info['is_array']:
                     code(3, '{')
-                    code(4, f'int arr_len = sb_count({casted}->{name});')
+                    code(4, f'int arr_len = arrlen({casted}->{name});')
                     code(4, f'bool is_inline = arr_len <= {INLINE_ARRAY_MAX_SIZE};')
                     code(4, r'const char* sep = is_inline? ", " : "\\n";')
                     code(4, f'fprintf(stream, " {{ {name} = [%s", is_inline? " " : "\\n");')
@@ -135,9 +136,10 @@ for tag, node in sorted(node_types.items()):
                 if info['is_array']:
                     inline_max = 0 if info['is_node'] else INLINE_ARRAY_MAX_SIZE
                     code(3, '{')
-                    code(4, f'int arr_len = sb_count({casted}->{name});')
+                    code(4, f'int arr_len = arrlen({casted}->{name});')
                     code(4, f'bool is_inline = arr_len <= {inline_max};')
-                    code(4, r'const char* sep = is_inline? ", " : "\\n";')
+                    if not info['is_node']:
+                        code(4, r'const char* sep = is_inline? ", " : "\\n";')
                     code(4, f'fprintf(stream, "{name} = [%s", is_inline? " " : "\\n");')
                     code(4, 'for (int i = 0; i < arr_len; i++) {')
                     code(5, 'if (!is_inline) {')

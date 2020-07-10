@@ -4,7 +4,7 @@ static AST_Qualname* qualname(Parser self, bool allow_eol) {
 	NEW_NODE(qn, NODE_QUALNAME);
 	EXPECT(TOK_IDENT, "Expected an identifier here");
 	do {
-		sb_push(qn->parts, POP().str_value);
+		arrpush(qn->parts, POP().str_value);
 		if (allow_eol) { while(TOP().type == TOK_EOL) POP(); }
 		if (TOP().type != TOK_DOT) RETURN(qn);
 		POP();
@@ -46,12 +46,12 @@ static AST_String* string_literal(Parser self, bool allow_eol) {
 	const char* first = POP().str_value;
 	if (TOP().type == TOK_STRING) {
 		const char** strings = 0;
-		sb_push(strings, first);
+		arrpush(strings, first);
 		do {
-			sb_push(strings, POP().str_value);
+			arrpush(strings, POP().str_value);
 			if (allow_eol) { while(TOP().type == TOK_EOL) POP(); }
 		} while (TOP().type == TOK_STRING);
-		int len = sb_count(strings);
+		int len = arrlen(strings);
 		int total_len = 0;
 		for (int i = 0; i < len; i++) {
 			total_len += strlen(strings[i]);
@@ -63,7 +63,7 @@ static AST_String* string_literal(Parser self, bool allow_eol) {
 			while (*other) *buf++ = *other++;
 		}
 		// Adding a null byte at the end is unnecessary becase arena_alloc returns zeroed memory
-		sb_free(strings);
+		arrfree(strings);
 	}
 	else leaf->value = first;
 	RETURN(leaf);

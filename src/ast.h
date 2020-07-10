@@ -4,6 +4,11 @@
 #include <stdbool.h>
 #include <stdio.h>
 
+// For communicating intent about how node fields are intended to be used
+// These also help the node printer generator to work properly
+#define MAP *
+#define ARRAY *
+
 typedef struct _node_tag NodeTag;
 
 typedef enum _node_type {
@@ -19,19 +24,15 @@ typedef enum _node_type {
 #define AST_NODE_COMMON_FIELDS \
 	NodeType node_type; \
 	const char* src_file; \
-	NodeTag* tags; \
+	NodeTag ARRAY tags; \
 	unsigned int start_line, start_col, end_line, end_col;
 
-typedef struct _empty_node {
+typedef struct NODE_EMPTY {
 	AST_NODE_COMMON_FIELDS
 } AST_Node;
 
 typedef int Rune;
 
-#define MAP *
-#define ARRAY *
 #include "ast_nodes.h"
-#undef MAP
-#undef ARRAY
 
 void print_ast(FILE* stream, const AST_Node* root);

@@ -5,7 +5,7 @@
 
 #include "lexer.h"
 #include "parser.h"
-#include "stretchy_buffer.h"
+#include "stb_ds.h"
 #include "util.h"
 #include "colors.h"
 
@@ -53,10 +53,10 @@ static size_t size_table[] = {
 };
 
 static inline void* arena_alloc(Parser self, size_t n_bytes) {
-	if (!self->arena_current || self->arena_current - sb_last(self->arenas) + n_bytes > ARENA_SIZE) {
+	if (!self->arena_current || self->arena_current - arrlast(self->arenas) + n_bytes > ARENA_SIZE) {
 		self->arena_current = calloc(ARENA_SIZE, 1);  // ensure all nodes from this arena are zeroed out
 		assert(self->arena_current && "Unable to allocate next block of arena!!!");
-		sb_push(self->arenas, self->arena_current);
+		arrpush(self->arenas, self->arena_current);
 	}
 	void* result = self->arena_current;
 	self->arena_current = (void*) (
@@ -74,11 +74,6 @@ static AST_Node* node_create(Parser self, NodeType type) {
 	node->src_file = self->src;
 	return node;
 }
-
-// static void print_current_line(Parser self) {
-// 	const char** lines = lexer_get_lines(self->lex, 0);
-// 	printf("%s\n", lines[lexer_peek_token(self->lex, 0).start_line - 1]);
-// }
 
 // Local utility macros
 
@@ -103,7 +98,21 @@ static AST_Node* node_create(Parser self, NodeType type) {
 		N->start_col = B->start_col; \
 	} while (0)
 
-#define SYNTAX_ERROR(fmt, ...) do { \
+#define SYNTAX_WARNING(fmt, ...) do { \
+	Token _top_token_ = TOP(); \
+	const char** lines = lexer_get_lines(self->lex, 0); \
+	if (RULE_DEBUG) fprintf(stderr, "(From rule '%s', line %d)\n", __func__, __LINE__); \
+	fprintf(stderr, "Syntax warning in '%s' on line %d, column %d: " fmt "\n", \
+		self->src , _top_token_.start_line, _top_token_.start_col, ##__VA_ARGS__ ); \
+	show_error_line(stderr, \
+		lines[_top_token_.start_line - 1], _top_token_.start_line, _top_token_.start_col, \
+		(_top_token_.end_line > _top_token_.start_line)? \
+			strlen(lines[_top_token_.start_line - 1]) \
+			: _top_token_.end_col); \
+	self->warning_count++; \
+} while (0)
+
+#define SYNTAX_ERROR_NONFATAL(fmt, ...) do { \
 	Token _top_token_ = TOP(); \
 	const char** lines = lexer_get_lines(self->lex, 0); \
 	if (RULE_DEBUG) fprintf(stderr, "(From rule '%s', line %d)\n", __func__, __LINE__); \
@@ -114,8 +123,14 @@ static AST_Node* node_create(Parser self, NodeType type) {
 		(_top_token_.end_line > _top_token_.start_line)? \
 			strlen(lines[_top_token_.start_line - 1]) \
 			: _top_token_.end_col); \
+	self->error_count++; \
+} while (0)
+
+#define SYNTAX_ERROR(fmt, ...) do { \
+	SYNTAX_ERROR_NONFATAL(fmt, ##__VA_ARGS__); \
 	return 0; \
 } while (0)
+
 #define _token_ _top_token_.literal_text  // the literal text of the top token (for syntax errors)
 
 #define EXPECT(TTYPE, fmt, ...) do { \
@@ -123,15 +138,14 @@ static AST_Node* node_create(Parser self, NodeType type) {
 } while (0)
 
 #define APPLY(X, RULE, ...) do { \
-	AST_Node* _result_ = RULE(self, ##__VA_ARGS__); \
-	if (!_result_) return 0; \
-	X = _result_; \
+	X = RULE(self, ##__VA_ARGS__); \
+	if (!X) return 0; \
 } while (0)
 
 #define APPEND(ARR, RULE, ...) do { \
 	AST_Node* _result_ = RULE(self, ##__VA_ARGS__); \
 	if (!_result_) return 0; \
-	sb_push(ARR, _result_); \
+	arrpush(ARR, _result_); \
 } while (0)
 
 #define FINISH(N) do { \
@@ -159,6 +173,7 @@ static AST_Node* node_create(Parser self, NodeType type) {
 #include "rules/atoms.h"
 #include "rules/toplevel.h"
 #include "rules/expr.h"
+#include "rules/type.h"
 
 static AST_Function* func_def(Parser self) {
 	return 0;
@@ -180,11 +195,11 @@ AST_Node* parser_execute(Parser self) {
 		Token tok = TOP();
 		switch (tok.type) {
 			case KW_PUB:
-				if (is_pub) SYNTAX_ERROR("Repeated 'pub'");
+				if (is_pub) SYNTAX_WARNING("Repeated 'pub'");
 				is_pub = true;
 				break;
 			case KW_IMPORT: {
-				if (is_pub) SYNTAX_ERROR("'pub' cannot be applied to import statements");
+				if (is_pub) SYNTAX_ERROR_NONFATAL("'pub' cannot be applied to import statements");
 				APPEND(module->imports, import);
 			} break;
 			// case KW_FUNC: APPEND_DECL(func_def);
@@ -215,16 +230,23 @@ AST_Node* parser_execute(Parser self) {
 			} break;
 			// case KW_STRUCT: APPEND_DECL(struct_def);
 			// case KW_TABLE: APPEND_DECL(table_def);
-			case TOK_RPAREN: SYNTAX_ERROR("Unmatched parenthesis");
-			case TOK_RBRACE: SYNTAX_ERROR("Unmatched curly brace");
-			case TOK_RSQUARE: SYNTAX_ERROR("Unmatched square bracket");
+			case TOK_RPAREN: SYNTAX_ERROR_NONFATAL("Unmatched parenthesis"); break;
+			case TOK_RBRACE: SYNTAX_ERROR_NONFATAL("Unmatched curly brace"); break;
+			case TOK_RSQUARE: SYNTAX_ERROR_NONFATAL("Unmatched square bracket"); break;
 			case TOK_EOL:
-				if (is_pub) SYNTAX_ERROR("'pub' must by followed by a top-level declaration");
+				if (is_pub) {
+					SYNTAX_ERROR_NONFATAL("'pub' must by followed by a top-level declaration");
+					is_pub = false;
+				}
 				break;
 			case TOK_EOF:
 				if (is_pub) SYNTAX_ERROR("'pub' must be followed by a top-level declaration");
+				if (self->error_count) return 0;
 				RETURN(module);
-			default: SYNTAX_ERROR("Top level declarations cannot begin with %s", _token_);
+			default:
+				SYNTAX_ERROR_NONFATAL("Top level declarations cannot begin with %s", _token_);
+				do { POP(); } while (TOP().type != TOK_EOL && TOP().type != TOK_EOF);
+				POP();
 		}
 		POP();
 	}

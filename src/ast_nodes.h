@@ -17,7 +17,7 @@ typedef struct NODE_PARAMS {
 } AST_Params;
 
 typedef union {
-	NodeType _tag;
+	NodeType node_type;
 } AST_Type;
 
 typedef struct NODE_IMPORT {
@@ -154,3 +154,48 @@ typedef struct NODE_FIELD_ACCESS {
 	AST_Node* base;
 	AST_Qualname* field;
 } AST_FieldAccess;
+
+typedef struct NODE_SIMPLE_TYPE {
+	AST_NODE_COMMON_FIELDS
+	AST_Qualname* base;
+	bool is_nullable;
+	bool is_mutable;
+} AST_SimpleType;
+
+typedef struct NODE_POINTER_TYPE {
+	AST_NODE_COMMON_FIELDS
+	AST_Node* base;
+	bool is_nullable;
+	bool is_mutable;
+} AST_PointerType;
+
+typedef struct NODE_ARRAY_TYPE {
+	AST_NODE_COMMON_FIELDS
+	AST_Node* element_type;
+	size_t ARRAY dimensions;
+	// empty/null = any dimensionality
+	// negative value in slot = fixed runtime size
+	bool is_dynamic;
+	bool is_mutable;
+	bool is_nullable;
+} AST_ArrayType;
+
+typedef struct NODE_FUNC_TYPE {
+	AST_NODE_COMMON_FIELDS
+	AST_Node* ARRAY param_types;
+	AST_Node* return_type;
+} AST_FuncType;
+
+typedef struct NODE_TEMPLATE_TYPE {
+	AST_NODE_COMMON_FIELDS
+	AST_Node* ARRAY arguments;
+} AST_TemplateType;
+
+typedef struct NODE_UNION {
+	AST_NODE_COMMON_FIELDS
+	AST_Node* ARRAY variants;
+} AST_UnionType;
+
+typedef struct NODE_VOID {
+	AST_NODE_COMMON_FIELDS
+} AST_Void;

@@ -27,3 +27,4 @@ undefined
 and
 or
 not
+null

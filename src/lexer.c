@@ -1,19 +1,26 @@
 
 #include <stdio.h>
 #include <stdlib.h>
+#include <stdint.h>
 #include <ctype.h>
 #include <wctype.h>
 
-#include "arena.h"
 #include "lexer.h"
 #include "utf8.h"
-#include "stretchy_buffer.h"
+#include "stb_ds.h"
 
 #include "keywords.impl.gen.h"
 
 #define MAX_LOOKAHEAD 4
-#define ASCII_MAX 127
 #define MAX_DIGITS 256
+#define STDIN_SIZE_GUESS (64 * 1024)  // 64 KiB
+#define ASCII_MAX 127
+
+static void* arena_alloc__noabc(void** arena, size_t size) {
+	void* result = *arena;
+	*arena = ((char*) *arena) + size;
+	return result;
+}
 
 struct _lex_state {
 	Token token_buf[MAX_LOOKAHEAD];
@@ -32,14 +39,21 @@ struct _lex_state {
 };
 
 Lexer lexer_create(const char* filename) {
-	// Assumption: filename outlives the lexer
-	FILE* src = fopen(filename, "r");
+	FILE* src;
+	size_t src_size;
+	if (strcmp(filename, "-") == 0) {
+		src = stdin;
+		src_size = STDIN_SIZE_GUESS;  // We don't know how long stdin is, so limit input to a reasonably sane guess
+	}
+	else {
+		src = fopen(filename, "r");
+		fseek(src, 0, SEEK_END);
+		src_size = ftell(src);
+		rewind(src);
+	}
 	if (!src) {
 		return NULL;
 	}
-	fseek(src, 0, SEEK_END);
-	size_t src_size = ftell(src);
-	rewind(src);
 	Lexer self = calloc(1, sizeof(struct _lex_state));
 	if (!self) {
 		fclose(src);
@@ -57,20 +71,21 @@ Lexer lexer_create(const char* filename) {
 }
 
 void lexer_destroy(Lexer self) {
-	fclose(self->src);
+	if (self->src != stdin)	fclose(self->src);
 	free(self);
 }
 
 const char** lexer_get_lines(Lexer self, int* len) {
-	if (len) *len = sb_count(self->lines);
+	if (len) *len = arrlen(self->lines);
 	return self->lines;
 }
 
 static int lexer_fwdc(Lexer self) {
 	if (self->line_offset > self->line_length) {
+		// Completely read the next line, storing it in the line buffer
 		self->line_offset = 0;
 		self->line_length = 0;
-		sb_push(self->lines, self->line_buffer);
+		arrpush(self->lines, self->line_buffer);
 		self->current_line = self->line_buffer;
 
 		while (1) {
@@ -78,7 +93,7 @@ static int lexer_fwdc(Lexer self) {
 			switch (c = fgetc(self->src)) {
 				case 0: break;  // ignore null bytes
 				case EOF:
-					self->is_last_line = true;
+					self->is_last_line = true; // NOTE: possibly fragile implementation here
 					// drop through is intentional
 				case '\n':
 					*self->line_buffer++ = 0;

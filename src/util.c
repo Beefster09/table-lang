@@ -19,3 +19,6 @@ void show_error_line(FILE* stream, const char* line, int line_no, int start_col,
 	color_end(stream);
 	fprintf(stream, "\n");
 }
+
+#define STB_DS_IMPLEMENTATION
+#include "stb_ds.h"

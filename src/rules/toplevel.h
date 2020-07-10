@@ -3,12 +3,16 @@
 static AST_Const* const_def(Parser self) {
 	NEW_NODE(constant, NODE_CONST);
 
-	EXPECT(TOK_IDENT, "Expected name of constant.");
+	EXPECT(TOK_IDENT, "Expected name of constant");
 	constant->name = POP().str_value;
 
 	switch (TOP().type) {
 		case TOK_COLON:
-			SYNTAX_ERROR("Typed constants are not implemented yet");
+			POP();  // ':'
+			if (TOP().type != TOK_ASSIGN) {
+				APPLY(constant->type, type, false, 0);
+				EXPECT(TOK_ASSIGN, "Expected '=' after type");
+			}
 			// drop through is intentional
 		case TOK_ASSIGN:
 			POP();  // '='
