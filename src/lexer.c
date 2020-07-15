@@ -11,7 +11,8 @@
 
 #include "keywords.impl.gen.h"
 
-#define MAX_LOOKAHEAD 4
+#define BASE_LOOKAHEAD_MAX 16
+#define BASE_LOOKAHEAD_NO_EOL_MAX 16
 #define MAX_DIGITS 256
 #define STDIN_SIZE_GUESS (64 * 1024)  // 64 KiB
 #define ASCII_MAX 127
@@ -23,9 +24,11 @@ static void* arena_alloc__noabc(void** arena, size_t size) {
 }
 
 struct _lex_state {
-	Token token_buf[MAX_LOOKAHEAD];
+	Token* token_buf;
+	// Token** tokens_filtered;
+	int* paren_stack;  // remembers {}, [], and (): needed for automatically discarding eols in some contexts
 	FILE* src;
-	unsigned int next_tok, tokens_buffered, total_tokens_emitted;
+	int next_tok, tokens_buffered, total_tokens_emitted;
 	unsigned int line_no, column;
 	void* arena_block; // The arena used for literal text for tokens, raw lines, and strings
 	char* next_literal;  // Rolling pointer used for storing
@@ -59,6 +62,7 @@ Lexer lexer_create(const char* filename) {
 		fclose(src);
 		return NULL;
 	}
+	arraddn(self->token_buf, BASE_LOOKAHEAD_MAX);
 	self->src = src;
 	self->next_literal = self->arena_block = malloc(src_size * 5 + 1);
 	self->string_buffer = ((char*) self->arena_block) + src_size * 2;
@@ -163,14 +167,14 @@ static int read_utf8_cont(Lexer self, int first, char** text_ptr) {
 	current->type = TOKTYPE; \
 	*text_ptr++ = 0; \
 	self->next_literal = text_ptr; \
-	return; \
+	return current; \
 } while (0)
 
 #define UTF8() (cur_ch = read_utf8_cont(self, cur_ch, &text_ptr))
 #define FWD_UTF8() do { FWD(); if (cur_ch > ASCII_MAX) UTF8(); } while (0)
 
-static void lexer_emit_token(Lexer self) {
-	Token* current = &self->token_buf[(self->next_tok + self->tokens_buffered++) % MAX_LOOKAHEAD];
+static Token* lexer_emit_token(Lexer self) {
+	Token* current = &self->token_buf[(self->next_tok + self->tokens_buffered++) % arrlen(self->token_buf)];
 	bool raw_string = false;
 	int cur_ch = 0;
 
@@ -186,26 +190,36 @@ static void lexer_emit_token(Lexer self) {
 		case EOF: {
 			current->type = TOK_EOF;
 			current->literal_text = "<EOF>";
-			return;
+			return current;
 		}
 		case '\n': emit_eol:
 			current->end_line++;
 			current->end_col = 0;
 			self->line_no++;
 			self->column = 1;
+			int len = arrlen(self->paren_stack);
+			if (len && self->paren_stack[len - 1] != '{') goto reset;
 			EMIT(TOK_EOL);
-		case ':': EMIT(TOK_COLON);
-		case ';': EMIT(TOK_SEMICOLON);
-		case ',': EMIT(TOK_COMMA);
-		case '$': EMIT(TOK_DOLLAR);
-		case '@': EMIT(TOK_AT);
-		case '?': EMIT(TOK_QMARK);
-		case '(': EMIT(TOK_LPAREN);
-		case ')': EMIT(TOK_RPAREN);
-		case '{': EMIT(TOK_LBRACE);
-		case '}': EMIT(TOK_RBRACE);
-		case '[': EMIT(TOK_LSQUARE);
-		case ']': EMIT(TOK_RSQUARE);
+		case ':':
+		case ';':
+		case ',':
+		case '$':
+		case '@':
+		case '?':
+			EMIT(cur_ch);
+
+		case '{':
+		case '(':
+		case '[':
+			arrpush(self->paren_stack, cur_ch);
+			EMIT(cur_ch);
+
+		case ')':
+		case ']':
+		case '}':
+			arrpop(self->paren_stack);
+			EMIT(cur_ch);
+
 		case '\\':
 			switch (FWD()) {
 				case '\\':  // Comment
@@ -585,27 +599,33 @@ static void lexer_emit_token(Lexer self) {
 #undef BACK
 #undef EMIT
 
-Token lexer_peek_token(Lexer self, int offset) {
+const Token EMPTY_TOKEN = { .type = TOK_EMPTY };
+const Token ERROR_TOKEN = { .type = TOK_ERROR };
+
+const Token* lexer_peek_token(Lexer self, int offset) {
+	int lah_max = arrlen(self->token_buf);
 	if (offset < 0) {
 		// check that the token exists and has not yet been overwritten
 		if ((int) self->total_tokens_emitted + offset >= 0
-				&& self->tokens_buffered - offset < MAX_LOOKAHEAD ) {
-			return self->token_buf[(self->next_tok + MAX_LOOKAHEAD + offset) % MAX_LOOKAHEAD];
+				&& self->tokens_buffered - offset < lah_max ) {
+			return &self->token_buf[(self->next_tok + lah_max + offset) % lah_max];
 		}
-		else return (Token) { .type = TOK_EMPTY };
+		else return &EMPTY_TOKEN;
 	}
-	if (offset >= MAX_LOOKAHEAD) return (Token) { .type = TOK_ERROR };
-	while (offset + 1 > (int) self->tokens_buffered) lexer_emit_token(self);
-	return self->token_buf[(self->next_tok + offset) % MAX_LOOKAHEAD];
+	if (offset >= lah_max) return &ERROR_TOKEN; // TODO: expand
+	while (offset + 1 > self->tokens_buffered) {
+		lexer_emit_token(self);
+	}
+	return &self->token_buf[(self->next_tok + offset) % lah_max];
 }
 
-Token lexer_pop_token(Lexer self) {
+const Token* lexer_pop_token(Lexer self) {
 	if (!self->tokens_buffered) lexer_emit_token(self);
 	Token* result = &self->token_buf[self->next_tok];
-	self->next_tok = (self->next_tok + 1) % MAX_LOOKAHEAD;
+	self->next_tok = (self->next_tok + 1) % arrlen(self->token_buf);
 	self->tokens_buffered--;
 	self->total_tokens_emitted++;
-	return *result;
+	return result;
 }
 
 #define REPR_SIZE 80

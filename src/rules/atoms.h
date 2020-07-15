@@ -1,14 +1,12 @@
 // To be included *only* from parser.c
 
-static AST_Qualname* qualname(Parser self, bool allow_eol) {
+static AST_Qualname* qualname(Parser self) {
 	NEW_NODE(qn, NODE_QUALNAME);
 	EXPECT(TOK_IDENT, "Expected an identifier here");
 	do {
 		arrpush(qn->parts, POP().str_value);
-		if (allow_eol) { while(TOP().type == TOK_EOL) POP(); }
 		if (TOP().type != TOK_DOT) RETURN(qn);
-		POP();
-		if (allow_eol) { while(TOP().type == TOK_EOL) POP(); }
+		POP();  // '.'
 	} while (1);
 }
 
@@ -40,7 +38,7 @@ static AST_Char* char_literal(Parser self) {
 	RETURN(leaf);
 }
 
-static AST_String* string_literal(Parser self, bool allow_eol) {
+static AST_String* string_literal(Parser self) {
 	NEW_NODE(leaf, NODE_STRING);
 	EXPECT(TOK_STRING, "Expected a string here");
 	const char* first = POP().str_value;
@@ -49,7 +47,6 @@ static AST_String* string_literal(Parser self, bool allow_eol) {
 		arrpush(strings, first);
 		do {
 			arrpush(strings, POP().str_value);
-			if (allow_eol) { while(TOP().type == TOK_EOL) POP(); }
 		} while (TOP().type == TOK_STRING);
 		int len = arrlen(strings);
 		int total_len = 0;
@@ -69,14 +66,14 @@ static AST_String* string_literal(Parser self, bool allow_eol) {
 	RETURN(leaf);
 }
 
-static AST_Node* atom(Parser self, bool allow_eol) {
+static AST_Node* atom(Parser self) {
 	switch (TOP().type) {
 		case TOK_INT: return int_literal(self);
 		case TOK_FLOAT: return float_literal(self);
 		case TOK_BOOL: return bool_literal(self);
-		case TOK_STRING: return string_literal(self, allow_eol);
+		case TOK_STRING: return string_literal(self);
 		case TOK_CHAR: return char_literal(self);
-		case TOK_IDENT: return qualname(self, allow_eol);
+		case TOK_IDENT: return qualname(self);
 		default: SYNTAX_ERROR("Expected atom (an integer, float, boolean, string, or qualified name), not %s", _token_);
 	}
 }

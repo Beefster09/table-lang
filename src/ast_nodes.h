@@ -12,8 +12,7 @@ typedef void AST_KeywordParam;
 
 typedef struct NODE_PARAMS {
 	AST_NODE_COMMON_FIELDS
-	AST_Param* ARRAY pos_params;
-	AST_KeywordParam* MAP kw_params;
+	AST_Param* ARRAY params;
 } AST_Params;
 
 typedef union {
@@ -140,7 +139,8 @@ typedef struct NODE_FUNC_CALL {
 	AST_NODE_COMMON_FIELDS
 	AST_Node* func;
 	AST_Node* ARRAY pos_args;
-	AST_KWArg* MAP kw_args;
+	struct { const char* key; AST_Node* value; } MAP kw_args;
+	bool is_word_op;
 } AST_FuncCall;
 
 typedef struct NODE_SUBSCRIPT {
@@ -195,7 +195,3 @@ typedef struct NODE_UNION {
 	AST_NODE_COMMON_FIELDS
 	AST_Node* ARRAY variants;
 } AST_UnionType;
-
-typedef struct NODE_VOID {
-	AST_NODE_COMMON_FIELDS
-} AST_Void;

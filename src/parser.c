@@ -79,16 +79,23 @@ static AST_Node* node_create(Parser self, NodeType type) {
 
 #pragma GCC diagnostic ignored "-Wincompatible-pointer-types"
 
-#define TOP() lexer_peek_token(self->lex, 0)
-#define LOOKAHEAD(n) lexer_peek_token(self->lex, n)
-#define POP() lexer_pop_token(self->lex)
+#define TOP() (*lexer_peek_token(self->lex, 0))
+#define LOOKAHEAD(n) (*lexer_peek_token(self->lex, n))
+#define POP() (*lexer_pop_token(self->lex))
+// #define TOP0() (*lexer_peek_token_no_eol(self->lex, 0))
+// #define LOOKAHEAD0(n) (*lexer_peek_token_no_eol(self->lex, n))
+// #define POP0() (*lexer_pop_token_no_eol(self->lex))
+// #define TOPX() (allow_eol? (*lexer_peek_token_no_eol(self->lex, 0)) : (*lexer_peek_token(self->lex, 0)))
+// #define LOOKAHEADX(n) (allow_eol? (*lexer_peek_token_no_eol(self->lex, n)) : (*lexer_peek_token(self->lex, n)))
+// #define POPX() (allow_eol? (*lexer_pop_token_no_eol(self->lex)) : (*lexer_pop_token(self->lex)))
+#define CONSUME_EOLS() + + +
 
 #define NEW_NODE(N, T) \
 	struct T* N = node_create(self, T); \
 	do { \
-		Token _top_token_ = TOP(); \
-		N->start_line = _top_token_.start_line; \
-		N->start_col = _top_token_.start_col; \
+		Token* _top_token_ = lexer_peek_token(self->lex, 0); \
+		N->start_line = _top_token_->start_line; \
+		N->start_col = _top_token_->start_col; \
 	} while (0)
 
 #define NEW_NODE_FROM(N, T, B) \
@@ -99,30 +106,30 @@ static AST_Node* node_create(Parser self, NodeType type) {
 	} while (0)
 
 #define SYNTAX_WARNING(fmt, ...) do { \
-	Token _top_token_ = TOP(); \
+	Token* _top_token_ = lexer_peek_token(self->lex, 0); \
 	const char** lines = lexer_get_lines(self->lex, 0); \
-	if (RULE_DEBUG) fprintf(stderr, "(From rule '%s', line %d)\n", __func__, __LINE__); \
+	if (RULE_DEBUG) fprintf(stderr, "(Emitted from rule '%s' @ %s:%d)\n", __func__, __FILE__, __LINE__); \
 	fprintf(stderr, "Syntax warning in '%s' on line %d, column %d: " fmt "\n", \
-		self->src , _top_token_.start_line, _top_token_.start_col, ##__VA_ARGS__ ); \
+		self->src , _top_token_->start_line, _top_token_->start_col, ##__VA_ARGS__ ); \
 	show_error_line(stderr, \
-		lines[_top_token_.start_line - 1], _top_token_.start_line, _top_token_.start_col, \
-		(_top_token_.end_line > _top_token_.start_line)? \
-			strlen(lines[_top_token_.start_line - 1]) \
-			: _top_token_.end_col); \
+		lines[_top_token_->start_line - 1], _top_token_->start_line, _top_token_->start_col, \
+		(_top_token_->end_line > _top_token_->start_line)? \
+			strlen(lines[_top_token_->start_line - 1]) \
+			: _top_token_->end_col); \
 	self->warning_count++; \
 } while (0)
 
 #define SYNTAX_ERROR_NONFATAL(fmt, ...) do { \
-	Token _top_token_ = TOP(); \
+	Token* _top_token_ = lexer_peek_token(self->lex, 0); \
 	const char** lines = lexer_get_lines(self->lex, 0); \
-	if (RULE_DEBUG) fprintf(stderr, "(From rule '%s', line %d)\n", __func__, __LINE__); \
+	if (RULE_DEBUG) fprintf(stderr, "(Emitted from rule '%s' @ %s:%d)\n", __func__, __FILE__, __LINE__); \
 	fprintf(stderr, "Syntax error in '%s' on line %d, column %d: " fmt "\n", \
-		self->src , _top_token_.start_line, _top_token_.start_col, ##__VA_ARGS__ ); \
+		self->src , _top_token_->start_line, _top_token_->start_col, ##__VA_ARGS__ ); \
 	show_error_line(stderr, \
-		lines[_top_token_.start_line - 1], _top_token_.start_line, _top_token_.start_col, \
-		(_top_token_.end_line > _top_token_.start_line)? \
-			strlen(lines[_top_token_.start_line - 1]) \
-			: _top_token_.end_col); \
+		lines[_top_token_->start_line - 1], _top_token_->start_line, _top_token_->start_col, \
+		(_top_token_->end_line > _top_token_->start_line)? \
+			strlen(lines[_top_token_->start_line - 1]) \
+			: _top_token_->end_col); \
 	self->error_count++; \
 } while (0)
 
@@ -131,7 +138,7 @@ static AST_Node* node_create(Parser self, NodeType type) {
 	return 0; \
 } while (0)
 
-#define _token_ _top_token_.literal_text  // the literal text of the top token (for syntax errors)
+#define _token_ _top_token_->literal_text  // the literal text of the top token (for syntax errors)
 
 #define EXPECT(TTYPE, fmt, ...) do { \
 	if (TOP().type != TTYPE) SYNTAX_ERROR(fmt, ##__VA_ARGS__); \
@@ -149,10 +156,10 @@ static AST_Node* node_create(Parser self, NodeType type) {
 } while (0)
 
 #define FINISH(N) do { \
-	Token _prev_token_ = lexer_peek_token(self->lex, -1); \
-	if (_prev_token_.type) { \
-		N->end_line = _prev_token_.end_line; \
-		N->end_col = _prev_token_.end_col; \
+	Token* _prev_token_ = lexer_peek_token(self->lex, -1); \
+	if (_prev_token_->type) { \
+		N->end_line = _prev_token_->end_line; \
+		N->end_col = _prev_token_->end_col; \
 	} \
 	else { \
 		N->end_line = N->start_line; \

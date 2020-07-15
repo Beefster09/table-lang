@@ -7,20 +7,37 @@ keywords_txt = os.path.join(os.path.dirname(__file__), 'keywords.txt')
 
 keywords = sorted(line.strip() for line in open(keywords_txt))
 
+def code(tabs, *parts, **kw):
+    print('\t' * tabs, *parts, sep='', **kw)
+
+def gen_binary_search(strings, ident, tabs=1):
+    if len(strings) > 3:
+        middle_index = len(strings) // 2
+        middle_string = strings[middle_index]
+        temp = f"{middle_string}_check"
+        code(tabs, f'int {temp} = strcmp({ident}, "{middle_string}");')
+        code(tabs, f'if ({temp} < 0) {{')
+        gen_binary_search(strings[:middle_index], ident, tabs + 1)
+        code(tabs, '}')
+        code(tabs, f'else if ({temp} == 0) return KW_{middle_string.upper()};')
+        code(tabs, 'else {')
+        gen_binary_search(strings[middle_index + 1:], ident, tabs + 1)
+        code(tabs, '}')
+    else:
+        for string in strings:
+            code(tabs, f'if (strcmp({ident}, "{string}") == 0) return KW_{string.upper()};')
+
 print("#include <string.h>")
 
 print("Keyword str_to_kw(const char* str) {")
-print('\t', end='')
-for kw in keywords:
-    print(f'if (strcmp(str, "{kw}") == 0) return KW_{kw.upper()};')
-    print("\telse ", end='')
-print("return KW_NONE;")
+gen_binary_search(keywords, 'str', 1)
+code(1, "return KW_NONE;")
 print("}")
 
 print("const char* kw_to_str(Keyword kw) {")
-print("\tswitch (kw) {")
+code(1, "switch (kw) {")
 for kw in keywords:
-    print(f'\t\tcase KW_{kw.upper()}: return "{kw}";')
-print('\t\tdefault: return "<ERROR>";')
-print("\t}")
+    code(2, f'case KW_{kw.upper()}: return "{kw}";')
+code(2, 'default: return "<ERROR>";')
+code(1, "}")
 print("}")

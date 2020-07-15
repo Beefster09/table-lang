@@ -36,16 +36,37 @@ def parse_type(c_type):
         'format': TYPE_FORMATS.get(filtered),
         'is_primitive': filtered in TYPE_FORMATS,
         'filter_l': '',
-        'filter_r': '? "true" : "false"' if filtered[0] == 'bool' else '',
+        'filter_r': '? "true" : "false"' if filtered == ('bool',) else '',
         'is_node': filtered[0].startswith('AST_') and filtered[1] == '*',
         'is_array': parts[-1] == 'ARRAY',
-        'is_map': parts[-1] == 'MAP',
+        'is_map': False,
     }
+    return result
 
+def parse_map_type(key_type, value_type):
+    key_parts = tuple(key_type.replace('*', ' * ').split())
+    value_parts = tuple(value_type.replace('*', ' * ').split())
+    key_filtered = tuple(p for p in key_parts if p not in ('const', 'ARRAY', 'MAP'))
+    value_filtered = tuple(p for p in value_parts if p not in ('const', 'ARRAY', 'MAP'))
+    result = {
+        'type': value_parts,
+        'filtered_type': value_filtered,
+        'format': TYPE_FORMATS.get(value_filtered),
+        'is_primitive': value_filtered in TYPE_FORMATS,
+        'filter_l': '',
+        'filter_r': '? "true" : "false"' if value_filtered == ('bool',) else '',
+        'is_node': value_filtered[0].startswith('AST_') and value_filtered[1] == '*',
+        'is_array': value_parts[-1] == 'ARRAY',
+        'is_map': True,
+        'key_type': key_filtered,
+        'key_format': TYPE_FORMATS.get(key_filtered),
+        'key_is_primitive': key_filtered in TYPE_FORMATS,
+    }
     return result
 
 node_start = re.compile(r"^\s*typedef\s+struct\s+(NODE_\w+)")
 node_field = re.compile(r"^\s*([\w\s\*]+)\s*\b(\w+);")
+node_map_field = re.compile(r"^\s*struct\s*{\s*(.+)\s*\bkey\s*;\s*(.+)\s*\bvalue\s*;\s*}\s*MAP\s*\b(\w+);")
 node_end = re.compile(r"^\s*}\s*AST_(\w+)\s*;")
 
 node_types = {}
@@ -66,8 +87,11 @@ with open(ast_nodes_h) as f:
                     node_types[tag] = node_type
                     break
                 match_field = node_field.match(line)
+                match_map_field = node_map_field.match(line)
                 if match_field:
                     node_type['fields'][match_field.group(2)] = parse_type(match_field.group(1))
+                elif match_map_field:
+                    node_type['fields'][match_map_field.group(3)] = parse_map_type(match_map_field.group(1), match_map_field.group(2))
 
 debug(pprint.pformat(node_types))
 
@@ -133,6 +157,7 @@ for tag, node in sorted(node_types.items()):
             code(3, 'fprintf(stream, " {\\n");')
             for name, info in fields.items():
                 indent(3, 1)
+
                 if info['is_array']:
                     inline_max = 0 if info['is_node'] else INLINE_ARRAY_MAX_SIZE
                     code(3, '{')
@@ -159,6 +184,33 @@ for tag, node in sorted(node_types.items()):
                     code(4, '}')
                     code(4, 'fprintf(stream, "]\\n");')
                     code(3, '}')
+
+                elif info['is_map']:
+                    lencall = "shlen" if info["key_type"] == ("char", "*") else "hmlen"
+                    code(3, f'if ({casted}->{name}) {{')
+                    code(4, f'int map_len = {lencall}({casted}->{name});')
+                    code(4, f'fprintf(stream, "{name} = {{\\n");')
+                    code(4, 'for (int i = 0; i < map_len; i++) {')
+                    indent(5, 2)
+                    if info['key_is_primitive']:
+                        code(5, f'fprintf(stream, "{info["key_format"]}: ", {casted}->{name}[i].key);')
+                    else:
+                        code(5, r'fprintf(stream, "\?\?\?#%d: ", i);')
+                    if info['is_node']:
+                        code(5, f'print_ast_node(stream, (AST_Node*) {casted}->{name}[i].value, indent + 2);')
+                    elif info['is_primitive'] or info['filtered_type'][-1] == '*':
+                        code(5, f'fprintf(stream, "{info.get("format", "%p")}",'
+                                      f' {info["filter_l"]}{casted}->{name}[i].value{info["filter_r"]});')
+                    else:
+                        code(5, r'fprintf(stream, "\?\?\?");')
+                    code(4, '}')
+                    indent(4, 1)
+                    code(4, 'fprintf(stream, "}\\n");')
+                    code(3, '}')
+                    code(3, 'else {')
+                    code(4, f'fprintf(stream, "{name} = {{ }}\\n");')
+                    code(3, '}')
+
                 elif info['is_primitive']:
                     code(3, f'fprintf(stream, "{name} = {info["format"]}\\n",'
                         f' {info["filter_l"]}{casted}->{name}{info["filter_r"]});')
@@ -167,6 +219,7 @@ for tag, node in sorted(node_types.items()):
                     code(3, f'print_ast_node(stream, (AST_Node*) {casted}->{name}, indent + 1);')
                 else:
                     code(3, f'fprintf(stream, "{name} = \\?\\?\\?\\n");')
+
             indent(3, 0)
             code(3, 'fprintf(stream, "}\\n");')
         code(2, '} break;')

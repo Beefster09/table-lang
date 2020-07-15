@@ -120,8 +120,9 @@ foo := 1..10 ; map(x => x * x + 1) ; filter(math.isprime)  \\ foo is [2, 5, 17, 
 # Built-in Types
 
 * `Int` - signed/unsigned, 8/16/32/64
-* `Float` - 32/64
 * `Bool`
+* `Float` - 32/64
+* `Complex` - 32/64
 * `Vec#` - int/float, 2/3/4/8/16, e.g.:
     * `Vec4`
     * `Float32Vec2`
@@ -176,25 +177,37 @@ eight_dims: Float[:8]  \\ 8-dimensional array (fixed, but size determined at run
 who_knows: Float[*]    \\ any-dimensional array
 ```
 
-Arrays support broadcasting of functions and operators with scalars. (as in numpy)
+Arrays support broadcasting of functions and operators with scalars. (similar to numpy, but more explicit)
 
 ```
 foo : Int![] = [1, 2, 3, 4]
-print(foo ^ 2)  \\ -> [1, 4, 9, 16]
-print(8 * foo)  \\ -> [8, 16, 24, 32]
-print(sqrt(foo)) \\ -> [1.0, 1.414213, 1.732050, 2.0]
+print(foo[*] ^ 2)  \\ -> [1, 4, 9, 16]
+print(8 * foo[*])  \\ -> [8, 16, 24, 32]
+print(sqrt(foo[*])) \\ -> [1.0, 1.414213, 1.732050, 2.0]
 ```
 
 Broadcasted op-assignments are only legal if the result of the operator returns the same type as the
 array's contained type.
 
 ```
-foo += 4
+foo[*] += 4
 print(foo)  \\ -> [5, 6, 7, 8]
-foo *= math.PI  \\ type mismatch error!
+foo[*] *= math.PI  \\ type mismatch error!
 ```
 
-Note: `++` is the array concatenation operator and is not broadcasted
+Whole expressions are lumped together, so
+
+```
+arr[*] * 5 + 11
+```
+
+is roughly equivalent to
+
+```
+[element * 5 + 11 for element in arr]
+```
+
+except that it preserves array shape rather than flattening it (as would happen with an array comprehension)
 
 ## Mutability
 
@@ -659,7 +672,7 @@ From tightest to loosest: (left-associative unless otherwise stated)
 * Unary operators
 * `*`, `/`, `%`, `&`
 * `+`, `-`, `~`
-* `\word` operators
+* `\word` operators (if these exist)
 * `?` - "elvis" / "or else" / null-coalescing operator
 * `x if cond else y` ternary (non-associative)
 * `|`
@@ -671,6 +684,7 @@ From tightest to loosest: (left-associative unless otherwise stated)
 * `and`
 * `or`
 * `,` (not really an operator, but this can matter)
+* `;` (separates parts of parameter lists and other similar syntax)
 * Assignments (statement level only, but can chain right-associatively if all lhs's are assignable)
 
 Boolean operators are spelled out and cannot be overloaded.

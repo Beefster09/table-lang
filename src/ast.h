@@ -33,6 +33,12 @@ typedef struct NODE_EMPTY {
 
 typedef int Rune;
 
+typedef struct {
+	const char* key;
+	AST_Node* value;
+} ASTMAP_NodeEntry;
+
 #include "ast_nodes.h"
 
 void print_ast(FILE* stream, const AST_Node* root);
+void ast_to_json(FILE* stream, const AST_Node* root);
