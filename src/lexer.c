@@ -253,12 +253,15 @@ static Token* lexer_emit_token(Lexer self) {
 		case '=':
 			switch (FWD()) {
 				case '>': EMIT(TOK_ARROW);
-				case '=': EMIT(TOK_EQ);
+				case '=':
+					current->str_value = current->literal_text;
+					EMIT(TOK_EQ);
 				default:
 					BACK();
 					EMIT(TOK_ASSIGN);
 			}
 		case '<':
+			current->str_value = current->literal_text;
 			if (FWD() == '=') {
 				EMIT(TOK_LE);
 			}
@@ -267,6 +270,7 @@ static Token* lexer_emit_token(Lexer self) {
 				EMIT(TOK_LT);
 			}
 		case '>':
+			current->str_value = current->literal_text;
 			if (FWD() == '=') {
 				EMIT(TOK_GE);
 			}
@@ -276,6 +280,7 @@ static Token* lexer_emit_token(Lexer self) {
 			}
 		case '!':
 			if (FWD() == '=') {
+				current->str_value = current->literal_text;
 				EMIT(TOK_NE);
 			}
 			else {
@@ -294,6 +299,7 @@ static Token* lexer_emit_token(Lexer self) {
 		case '~': current->type = TOK_TILDE; goto handle_operators;
 
 		handle_operators:
+			current->str_value = current->literal_text;
 			while (1) {
 				switch (FWD()) {
 					case '+': case '-':
@@ -302,7 +308,6 @@ static Token* lexer_emit_token(Lexer self) {
 					case '&': case '|':
 					case '~':
 						current->type = TOK_CUSTOM_OPERATOR;
-						current->str_value = current->literal_text;
 						break;
 
 					default: BACK(); EMIT(current->type);

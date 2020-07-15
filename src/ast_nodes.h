@@ -7,43 +7,54 @@ typedef struct NODE_QUALNAME {
 	const char* ARRAY parts;
 } AST_Qualname;
 
-typedef void AST_Param;
-typedef void AST_KeywordParam;
-
-typedef struct NODE_PARAMS {
+typedef struct NODE_NAME {
 	AST_NODE_COMMON_FIELDS
-	AST_Param* ARRAY params;
-} AST_Params;
+	const char* name;
+} AST_Name;
 
 typedef struct NODE_IMPORT {
 	AST_NODE_COMMON_FIELDS
-	const char* local_name;
+	AST_Name* local_name;
 	AST_Qualname* qualified_name;
 	const char* imported_file;
 	void* module_handle;
 } AST_Import;
 
-typedef struct NODE_FUNC {
+typedef struct NODE_PARAM {
+	AST_NODE_COMMON_FIELDS
+	AST_Name* name;
+	AST_Node* type;
+	bool is_vararg;
+	bool is_kw_only;
+} AST_Param;
+
+typedef struct NODE_FUNC_DEF {
+	AST_NODE_COMMON_FIELDS
+	AST_Name* name;
+	AST_Param* ARRAY params;
+	AST_Node* ret_type;
+	AST_Node* ARRAY body;
+	bool pub;
+} AST_FuncDef;
+
+typedef struct NODE_FUNC_OVERLOAD {
 	AST_NODE_COMMON_FIELDS
 	const char* name;
-	AST_Params* params;
-	AST_Node* ret_type;
-	AST_Node* body;
-	bool pub;
-} AST_Function;
+	AST_FuncDef* ARRAY overloads;
+} AST_FuncOverload;
 
 typedef struct NODE_CONST {
 	AST_NODE_COMMON_FIELDS
-	const char* name;
+	AST_Name* name;
 	AST_Node* type;
 	AST_Node* value;
+	bool pub;
 } AST_Const;
 
 typedef struct NODE_MODULE {
 	AST_NODE_COMMON_FIELDS
-	AST_Import* ARRAY imports;
 	struct { const char* key; AST_Node* value; } MAP scope;
-	const char* ARRAY exports;
+	// const char* ARRAY exports;
 } AST_Module;
 
 typedef struct NODE_INT {
@@ -124,12 +135,6 @@ typedef struct NODE_ARRAY {
 	AST_NODE_COMMON_FIELDS
 	AST_Node* ARRAY elements;
 } AST_Array;
-
-typedef struct NODE_KW_ARG {
-	AST_NODE_COMMON_FIELDS
-	const char* name;
-	AST_Node* value;
-} AST_KWArg;
 
 typedef struct NODE_FUNC_CALL {
 	AST_NODE_COMMON_FIELDS

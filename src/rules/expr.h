@@ -335,6 +335,6 @@ static AST_Subscript* subscript(Parser self, AST_Node* array) {
 }
 
 static AST_FuncCall* lambda(Parser self) {
-	NEW_NODE(anon_func, NODE_FUNC);
+	NEW_NODE(anon_func, NODE_FUNC_DEF);
 	SYNTAX_ERROR("Lambdas are not implemented yet (and might never be?)");
 }

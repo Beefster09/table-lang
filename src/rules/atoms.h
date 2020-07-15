@@ -1,5 +1,11 @@
 // To be included *only* from parser.c
 
+static AST_Name* simple_name(Parser self) {
+	NEW_NODE(n, NODE_NAME);
+	n->name = POP().str_value;
+	RETURN(n);
+}
+
 static AST_Qualname* qualname(Parser self) {
 	NEW_NODE(qn, NODE_QUALNAME);
 	EXPECT(TOK_IDENT, "Expected an identifier here");

@@ -101,31 +101,31 @@ static AST_Node* node_create(Parser self, NodeType type) {
 		N->start_col = B->start_col; \
 	} while (0)
 
+#define OUTPUT_ERROR(l0, c0, l1, c1, err_type, fmt, ...) do { \
+	const char** lines = lexer_get_lines(self->lex, 0); \
+	if (RULE_DEBUG) fprintf(stderr, "(Emitted from rule '%s' @ %s:%d)\n", __func__, strrchr(__FILE__, '/') + 1, __LINE__); \
+	fprintf(stderr, err_type " in '%s' at line %d, column %d: " fmt "\n", \
+		self->src, (l0), (c0), ##__VA_ARGS__ ); \
+	show_error_line(stderr, \
+		lines[(l0) - 1], (l0), (c0), \
+		((l1) > (l0))? strlen(lines[(l0) - 1]) : (c1)); \
+} while (0)
+
 #define SYNTAX_WARNING(fmt, ...) do { \
 	const Token* _top_token_ = lexer_peek_token(self->lex, 0); \
-	const char** lines = lexer_get_lines(self->lex, 0); \
-	if (RULE_DEBUG) fprintf(stderr, "(Emitted from rule '%s' @ %s:%d)\n", __func__, __FILE__, __LINE__); \
-	fprintf(stderr, "Syntax warning in '%s' on line %d, column %d: " fmt "\n", \
-		self->src , _top_token_->start_line, _top_token_->start_col, ##__VA_ARGS__ ); \
-	show_error_line(stderr, \
-		lines[_top_token_->start_line - 1], _top_token_->start_line, _top_token_->start_col, \
-		(_top_token_->end_line > _top_token_->start_line)? \
-			strlen(lines[_top_token_->start_line - 1]) \
-			: _top_token_->end_col); \
+	OUTPUT_ERROR( \
+		_top_token_->start_line, _top_token_->start_col, \
+		_top_token_->end_line, _top_token_->end_col, \
+		"Syntax warning", fmt, ##__VA_ARGS__); \
 	self->warning_count++; \
 } while (0)
 
 #define SYNTAX_ERROR_NONFATAL(fmt, ...) do { \
 	const Token* _top_token_ = lexer_peek_token(self->lex, 0); \
-	const char** lines = lexer_get_lines(self->lex, 0); \
-	if (RULE_DEBUG) fprintf(stderr, "(Emitted from rule '%s' @ %s:%d)\n", __func__, __FILE__, __LINE__); \
-	fprintf(stderr, "Syntax error in '%s' on line %d, column %d: " fmt "\n", \
-		self->src , _top_token_->start_line, _top_token_->start_col, ##__VA_ARGS__ ); \
-	show_error_line(stderr, \
-		lines[_top_token_->start_line - 1], _top_token_->start_line, _top_token_->start_col, \
-		(_top_token_->end_line > _top_token_->start_line)? \
-			strlen(lines[_top_token_->start_line - 1]) \
-			: _top_token_->end_col); \
+	OUTPUT_ERROR( \
+		_top_token_->start_line, _top_token_->start_col, \
+		_top_token_->end_line, _top_token_->end_col, \
+		"Syntax error", fmt, ##__VA_ARGS__); \
 	self->error_count++; \
 } while (0)
 
@@ -134,10 +134,23 @@ static AST_Node* node_create(Parser self, NodeType type) {
 	return 0; \
 } while (0)
 
+#define SYNTAX_ERROR_FROM_NONFATAL(X, fmt, ...) do { \
+	OUTPUT_ERROR( \
+		(X)->start_line, (X)->start_col, \
+		(X)->end_line, (X)->end_col, \
+		"Syntax error", fmt, ##__VA_ARGS__); \
+	self->error_count++; \
+} while (0)
+
 #define _token_ _top_token_->literal_text  // the literal text of the top token (for syntax errors)
 
 #define EXPECT(TTYPE, fmt, ...) do { \
 	if (TOP().type != TTYPE) SYNTAX_ERROR(fmt, ##__VA_ARGS__); \
+} while (0)
+
+#define CONSUME(TTYPE, fmt, ...) do { \
+	if (TOP().type != TTYPE) SYNTAX_ERROR(fmt, ##__VA_ARGS__); \
+	POP(); \
 } while (0)
 
 #define APPLY(X, RULE, ...) do { \
