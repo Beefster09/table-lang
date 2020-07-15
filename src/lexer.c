@@ -628,10 +628,18 @@ const Token* lexer_pop_token(Lexer self) {
 	return result;
 }
 
+void lexer_seek_toplevel(Lexer self) {
+	while (arrlen(self->paren_stack)) lexer_pop_token(self);
+	Token* tok;
+	do {
+		tok = lexer_pop_token(self);
+	} while (tok->type != TOK_EOL && tok->type != TOK_EOF && tok->type != TOK_ERROR);
+}
+
 #define REPR_SIZE 80
 
 const char* token_repr(const Token* tok) {
-	char* out = malloc(REPR_SIZE); // <-- sloppy memory management here
+	char* out = malloc(REPR_SIZE); // <-- FIXME: sloppy memory management here
 	switch (tok->type) {
 		case TOK_EMPTY:
 			snprintf(out, REPR_SIZE, "<EMPTY>");

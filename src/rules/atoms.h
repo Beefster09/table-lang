@@ -10,6 +10,23 @@ static AST_Qualname* qualname(Parser self) {
 	} while (1);
 }
 
+static const char* join_qualname(Parser self, AST_Qualname* qn) {
+	int len = arrlen(qn->parts);
+	int total_len = len;
+	for (int i = 0; i < len; i++) {
+		total_len += strlen(qn->parts[i]);
+	}
+	char* buf = arena_alloc(self, total_len);
+	const char* result = buf;
+	for (int i = 0; i < len; i++) {
+		const char* other = qn->parts[i];
+		while (*other) *buf++ = *other++;
+		if (i + 1 < len) *buf++ = '.';
+	}
+	// Adding a null byte at the end is unnecessary becase arena_alloc returns zeroed memory
+	return result;
+}
+
 static AST_Int* int_literal(Parser self) {
 	NEW_NODE(leaf, NODE_INT);
 	EXPECT(TOK_INT, "Expected an integer here");

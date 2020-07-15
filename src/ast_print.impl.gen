@@ -93,7 +93,8 @@ with open(ast_nodes_h) as f:
                 elif match_map_field:
                     node_type['fields'][match_map_field.group(3)] = parse_map_type(match_map_field.group(1), match_map_field.group(2))
 
-debug(pprint.pformat(node_types))
+if int(os.environ.get('DEBUG', '0')):
+    debug(pprint.pformat(node_types))
 
 def indent(tabs=1, offset=0):
     code(tabs, f'for (int j = indent + {offset}; j > 0; j--) fprintf(stream, "{AST_INDENT}");')
@@ -133,7 +134,7 @@ for tag, node in sorted(node_types.items()):
                     code(3, '{')
                     code(4, f'int arr_len = arrlen({casted}->{name});')
                     code(4, f'bool is_inline = arr_len <= {INLINE_ARRAY_MAX_SIZE};')
-                    code(4, r'const char* sep = is_inline? ", " : "\\n";')
+                    code(4, r'const char* sep = is_inline? ", " : "\n";')
                     code(4, f'fprintf(stream, " {{ {name} = [%s", is_inline? " " : "\\n");')
                     code(4, 'for (int i = 0; i < arr_len; i++) {')
                     code(5, 'if (!is_inline) {')
@@ -164,7 +165,7 @@ for tag, node in sorted(node_types.items()):
                     code(4, f'int arr_len = arrlen({casted}->{name});')
                     code(4, f'bool is_inline = arr_len <= {inline_max};')
                     if not info['is_node']:
-                        code(4, r'const char* sep = is_inline? ", " : "\\n";')
+                        code(4, r'const char* sep = is_inline? ", " : "\n";')
                     code(4, f'fprintf(stream, "{name} = [%s", is_inline? " " : "\\n");')
                     code(4, 'for (int i = 0; i < arr_len; i++) {')
                     code(5, 'if (!is_inline) {')

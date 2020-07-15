@@ -15,10 +15,6 @@ typedef struct NODE_PARAMS {
 	AST_Param* ARRAY params;
 } AST_Params;
 
-typedef union {
-	NodeType node_type;
-} AST_Type;
-
 typedef struct NODE_IMPORT {
 	AST_NODE_COMMON_FIELDS
 	const char* local_name;
@@ -31,16 +27,23 @@ typedef struct NODE_FUNC {
 	AST_NODE_COMMON_FIELDS
 	const char* name;
 	AST_Params* params;
-	AST_Type* ret_type;
+	AST_Node* ret_type;
 	AST_Node* body;
 	bool pub;
 } AST_Function;
 
+typedef struct NODE_CONST {
+	AST_NODE_COMMON_FIELDS
+	const char* name;
+	AST_Node* type;
+	AST_Node* value;
+} AST_Const;
+
 typedef struct NODE_MODULE {
 	AST_NODE_COMMON_FIELDS
 	AST_Import* ARRAY imports;
-	AST_Node* ARRAY private_decls;
-	AST_Node* ARRAY public_decls;
+	struct { const char* key; AST_Node* value; } MAP scope;
+	const char* ARRAY exports;
 } AST_Module;
 
 typedef struct NODE_INT {
@@ -67,13 +70,6 @@ typedef struct NODE_CHAR {
 	AST_NODE_COMMON_FIELDS
 	Rune value;
 } AST_Char;
-
-typedef struct NODE_CONST {
-	AST_NODE_COMMON_FIELDS
-	const char* name;
-	AST_Type* type;
-	AST_Node* expr_value;
-} AST_Const;
 
 typedef struct NODE_BINOP {
 	AST_NODE_COMMON_FIELDS

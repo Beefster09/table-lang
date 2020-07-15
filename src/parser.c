@@ -76,24 +76,20 @@ static AST_Node* node_create(Parser self, NodeType type) {
 }
 
 // Local utility macros
-
+#pragma GCC diagnostic push
 #pragma GCC diagnostic ignored "-Wincompatible-pointer-types"
+#pragma GCC diagnostic ignored "-Wunused-value"
 
+// #pragma GCC diagnostic push
 #define TOP() (*lexer_peek_token(self->lex, 0))
 #define LOOKAHEAD(n) (*lexer_peek_token(self->lex, n))
 #define POP() (*lexer_pop_token(self->lex))
-// #define TOP0() (*lexer_peek_token_no_eol(self->lex, 0))
-// #define LOOKAHEAD0(n) (*lexer_peek_token_no_eol(self->lex, n))
-// #define POP0() (*lexer_pop_token_no_eol(self->lex))
-// #define TOPX() (allow_eol? (*lexer_peek_token_no_eol(self->lex, 0)) : (*lexer_peek_token(self->lex, 0)))
-// #define LOOKAHEADX(n) (allow_eol? (*lexer_peek_token_no_eol(self->lex, n)) : (*lexer_peek_token(self->lex, n)))
-// #define POPX() (allow_eol? (*lexer_pop_token_no_eol(self->lex)) : (*lexer_pop_token(self->lex)))
-#define CONSUME_EOLS() + + +
+// #pragma GCC diagnostic pop
 
 #define NEW_NODE(N, T) \
 	struct T* N = node_create(self, T); \
 	do { \
-		Token* _top_token_ = lexer_peek_token(self->lex, 0); \
+		const Token* _top_token_ = lexer_peek_token(self->lex, 0); \
 		N->start_line = _top_token_->start_line; \
 		N->start_col = _top_token_->start_col; \
 	} while (0)
@@ -106,7 +102,7 @@ static AST_Node* node_create(Parser self, NodeType type) {
 	} while (0)
 
 #define SYNTAX_WARNING(fmt, ...) do { \
-	Token* _top_token_ = lexer_peek_token(self->lex, 0); \
+	const Token* _top_token_ = lexer_peek_token(self->lex, 0); \
 	const char** lines = lexer_get_lines(self->lex, 0); \
 	if (RULE_DEBUG) fprintf(stderr, "(Emitted from rule '%s' @ %s:%d)\n", __func__, __FILE__, __LINE__); \
 	fprintf(stderr, "Syntax warning in '%s' on line %d, column %d: " fmt "\n", \
@@ -120,7 +116,7 @@ static AST_Node* node_create(Parser self, NodeType type) {
 } while (0)
 
 #define SYNTAX_ERROR_NONFATAL(fmt, ...) do { \
-	Token* _top_token_ = lexer_peek_token(self->lex, 0); \
+	const Token* _top_token_ = lexer_peek_token(self->lex, 0); \
 	const char** lines = lexer_get_lines(self->lex, 0); \
 	if (RULE_DEBUG) fprintf(stderr, "(Emitted from rule '%s' @ %s:%d)\n", __func__, __FILE__, __LINE__); \
 	fprintf(stderr, "Syntax error in '%s' on line %d, column %d: " fmt "\n", \
@@ -156,7 +152,7 @@ static AST_Node* node_create(Parser self, NodeType type) {
 } while (0)
 
 #define FINISH(N) do { \
-	Token* _prev_token_ = lexer_peek_token(self->lex, -1); \
+	const Token* _prev_token_ = lexer_peek_token(self->lex, -1); \
 	if (_prev_token_->type) { \
 		N->end_line = _prev_token_->end_line; \
 		N->end_col = _prev_token_->end_col; \
@@ -178,88 +174,21 @@ static AST_Node* node_create(Parser self, NodeType type) {
 #include "rule_prototypes.gen.h"
 
 #include "rules/atoms.h"
-#include "rules/toplevel.h"
 #include "rules/expr.h"
 #include "rules/type.h"
-
-static AST_Function* func_def(Parser self) {
-	return 0;
-}
+#include "rules/toplevel.h"
 
 AST_Node* parser_execute(Parser self) {
 	NEW_NODE(module, NODE_MODULE);
+	sh_new_arena(module->scope);
 	bool is_pub = false;
-
-	#define APPEND_DECL(RULE) \
-		if (is_pub) { \
-			APPEND(module->public_decls, RULE); \
-		} \
-		else { \
-			APPEND(module->private_decls, RULE); \
+	while (TOP().type != TOK_EOF) {
+		if (!toplevel_item(self, module)) {
+			lexer_seek_toplevel(self->lex);
 		}
-
-	while (1) {
-		Token tok = TOP();
-		switch (tok.type) {
-			case KW_PUB:
-				if (is_pub) SYNTAX_WARNING("Repeated 'pub'");
-				is_pub = true;
-				break;
-			case KW_IMPORT: {
-				if (is_pub) SYNTAX_ERROR_NONFATAL("'pub' cannot be applied to import statements");
-				APPEND(module->imports, import);
-			} break;
-			// case KW_FUNC: APPEND_DECL(func_def);
-			case KW_CONST: {
-				POP(); // 'const'
-				if (TOP().type == TOK_LBRACE) {
-					// multiple constants
-					POP(); // '{'
-					EXPECT(TOK_EOL, "Expected end of line to begin const block.");
-					POP(); // EOL
-					while (TOP().type != TOK_RBRACE) {
-						if (TOP().type == TOK_EOL) { // skip empty lines
-							POP();
-							continue;
-						}
-						APPEND_DECL(const_def);
-						EXPECT(TOK_EOL, "Expected end of line after block constant");
-						POP(); // EOL
-					}
-					POP(); // '}'
-					EXPECT(TOK_EOL, "Expected end of line after const block");
-				}
-				else {
-					APPEND_DECL(const_def);
-					EXPECT(TOK_EOL, "Expected end of line after const");
-				}
-				is_pub = false;
-			} break;
-			// case KW_STRUCT: APPEND_DECL(struct_def);
-			// case KW_TABLE: APPEND_DECL(table_def);
-			case TOK_RPAREN: SYNTAX_ERROR_NONFATAL("Unmatched parenthesis"); break;
-			case TOK_RBRACE: SYNTAX_ERROR_NONFATAL("Unmatched curly brace"); break;
-			case TOK_RSQUARE: SYNTAX_ERROR_NONFATAL("Unmatched square bracket"); break;
-			case TOK_EOL:
-				if (is_pub) {
-					SYNTAX_ERROR_NONFATAL("'pub' must by followed by a top-level declaration");
-					is_pub = false;
-				}
-				break;
-			case TOK_EOF:
-				if (is_pub) SYNTAX_ERROR("'pub' must be followed by a top-level declaration");
-				if (self->error_count) return 0;
-				RETURN(module);
-			default:
-				SYNTAX_ERROR_NONFATAL("Top level declarations cannot begin with %s", _token_);
-				do { POP(); } while (TOP().type != TOK_EOL && TOP().type != TOK_EOF);
-				POP();
-		}
-		POP();
 	}
-
-	fprintf(stderr, "This code should be unreachable: %s, line %d", __func__, __LINE__);
-	return 0;
+	if (self->error_count) return NULL;
+	return module;
 }
 
 // === AST Printing ===

@@ -89,5 +89,7 @@ const char** lexer_get_lines(Lexer, int* len);
 const Token* lexer_peek_token(Lexer, int offset);
 const Token* lexer_pop_token(Lexer);
 
+void lexer_seek_toplevel(Lexer);
+
 const char* token_repr(const Token*);
 const char* token_to_string(const Token*);
