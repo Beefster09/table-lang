@@ -104,10 +104,53 @@ static AST_FuncDef* func_def(Parser self) {
 			SYNTAX_ERROR("Expected an identifier or operator to name this function");
 	}
 	CONSUME(TOK_LPAREN, "Expected a function parameter list");
-	CONSUME(TOK_RPAREN, "Expected end of parameter list");  // ')'
+	bool vararg_seen = false;
+	while (TOP().type != TOK_RPAREN) {
+		if (!vararg_seen && TOP().type == TOK_ELLIPSIS) {
+			POP();
+			vararg_seen = true;
+			CONSUME(TOK_COMMA, "Expected comma after lone ellipsis in parameter list");
+			EXPECT(TOK_IDENT, "Expected a keyword-only parameter after lone ellipsis");
+		}
+		if (TOP().type != TOK_IDENT) SYNTAX_ERROR("Expected the name of a parameter");
+		NEW_NODE(param, NODE_PARAM);
+		param->is_kw_only = vararg_seen;
+		APPLY(param->name, simple_name);
+		if (TOP().type == TOK_COLON) {
+			POP();
+			APPLY(param->type, type, 0);
+			if (TOP().type == TOK_ELLIPSIS) {
+				if (vararg_seen) SYNTAX_ERROR_NONFATAL("Parameter lists may only include one vararg");
+				POP();
+				param->is_vararg = true;
+				vararg_seen = true;
+			}
+		}
+		if (TOP().type == TOK_ASSIGN) {
+			POP();
+			APPLY(param->default_value, expr, 0);
+		}
+		if (shgeti(func->params, param->name->name) >= 0) {
+			SYNTAX_ERROR_FROM_NONFATAL(
+				param->name, "There is already a parameter named '%s' in function '%s'",
+				param->name->name, func->name? func->name->name : "<anonymous>"
+			);
+		}
+		shput(func->params, param->name->name, param);
+		if (TOP().type == TOK_COMMA) {
+			POP();
+		}
+		else EXPECT(TOK_RPAREN, "Expected comma or end of parameter list");
+	}
+	CONSUME(TOK_RPAREN, "Expected end of parameter list");
 
-	CONSUME(TOK_LBRACE, "Expected function body");  // '{'
-	CONSUME(TOK_RBRACE, "Expected end of function body");  // '}'
+	if (TOP().type == TOK_COLON) {
+		POP();
+		APPLY(func->ret_type, type, 0);
+	}
+
+	CONSUME(TOK_LBRACE, "Expected function body");
+	CONSUME(TOK_RBRACE, "Expected end of function body");
 
 	RETURN(func);
 }
@@ -137,14 +180,21 @@ static int toplevel_item(Parser self, AST_Module* module) {
 		case KW_FUNC: {
 			AST_FuncDef* func = func_def(self);
 			if (func) {
-				if (!func->name) SYNTAX_ERROR("This function in module scope does not have a name.");
+				if (!func->name) {
+					OUTPUT_ERROR(
+						func->start_line, func->start_col + 4,
+						func->start_line, func->start_col + 4,
+						"Error", "This function in module scope does not have a name.");
+					self->error_count++;
+					return 0;
+				}
 				AST_Node* maybe_overload = shget(module->scope, func->name->name);
 				if (maybe_overload) {
 					if (maybe_overload->node_type == NODE_FUNC_OVERLOAD) {
 						arrpush(((AST_FuncOverload*) maybe_overload)->overloads, func);
 					}
 					else {
-						SYNTAX_ERROR_FROM_NONFATAL(func->name, "Function definition for '%s' conflicts with something already in scope.", func->name->name);
+						SYNTAX_ERROR_FROM(func->name, "Function definition for '%s' conflicts with something already in scope.", func->name->name);
 					}
 				}
 				else {

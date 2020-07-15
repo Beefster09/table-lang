@@ -24,6 +24,7 @@ typedef struct NODE_PARAM {
 	AST_NODE_COMMON_FIELDS
 	AST_Name* name;
 	AST_Node* type;
+	AST_Node* default_value;
 	bool is_vararg;
 	bool is_kw_only;
 } AST_Param;
@@ -31,7 +32,7 @@ typedef struct NODE_PARAM {
 typedef struct NODE_FUNC_DEF {
 	AST_NODE_COMMON_FIELDS
 	AST_Name* name;
-	AST_Param* ARRAY params;
+	struct { const char* key; AST_Param* value; } MAP params;
 	AST_Node* ret_type;
 	AST_Node* ARRAY body;
 	bool pub;

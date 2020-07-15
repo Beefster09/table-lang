@@ -142,6 +142,11 @@ static AST_Node* node_create(Parser self, NodeType type) {
 	self->error_count++; \
 } while (0)
 
+#define SYNTAX_ERROR_FROM(X, fmt, ...) do { \
+	SYNTAX_ERROR_FROM_NONFATAL(X, fmt, ##__VA_ARGS__); \
+	return 0; \
+} while (0)
+
 #define _token_ _top_token_->literal_text  // the literal text of the top token (for syntax errors)
 
 #define EXPECT(TTYPE, fmt, ...) do { \
