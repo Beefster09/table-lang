@@ -116,6 +116,12 @@ static AST_FuncDef* func_def(Parser self) {
 		NEW_NODE(param, NODE_PARAM);
 		param->is_kw_only = vararg_seen;
 		APPLY(param->name, simple_name);
+		if (shgeti(func->params, param->name->name) >= 0) {
+			SYNTAX_ERROR_FROM_NONFATAL(
+				param->name, "There is already a parameter named '%s' in function '%s'",
+				param->name->name, func->name? func->name->name : "<anonymous>"
+			);
+		}
 		if (TOP().type == TOK_COLON) {
 			POP();
 			APPLY(param->type, type, 0);
@@ -127,14 +133,9 @@ static AST_FuncDef* func_def(Parser self) {
 			}
 		}
 		if (TOP().type == TOK_ASSIGN) {
+			if (param->is_vararg) SYNTAX_ERROR_NONFATAL("Varargs cannot have a default value");
 			POP();
 			APPLY(param->default_value, expr, 0);
-		}
-		if (shgeti(func->params, param->name->name) >= 0) {
-			SYNTAX_ERROR_FROM_NONFATAL(
-				param->name, "There is already a parameter named '%s' in function '%s'",
-				param->name->name, func->name? func->name->name : "<anonymous>"
-			);
 		}
 		shput(func->params, param->name->name, param);
 		if (TOP().type == TOK_COMMA) {
@@ -142,15 +143,15 @@ static AST_FuncDef* func_def(Parser self) {
 		}
 		else EXPECT(TOK_RPAREN, "Expected comma or end of parameter list");
 	}
-	CONSUME(TOK_RPAREN, "Expected end of parameter list");
+	POP();  // ')'
 
 	if (TOP().type == TOK_COLON) {
 		POP();
 		APPLY(func->ret_type, type, 0);
 	}
 
-	CONSUME(TOK_LBRACE, "Expected function body");
-	CONSUME(TOK_RBRACE, "Expected end of function body");
+	EXPECT(TOK_LBRACE, "Expected function body");
+	APPLY(func->body, block);
 
 	RETURN(func);
 }

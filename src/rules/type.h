@@ -5,8 +5,6 @@
 #define UNION_PRECEDENCE    20
 #define FUNCTYPE_PRECEDENCE 15
 
-
-
 #define FUNC_TYPE_RHS() do { \
 	POP();  /* '=>' */ \
 	switch (TOP().type) { \

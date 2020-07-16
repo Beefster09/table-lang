@@ -97,6 +97,7 @@ static AST_Node* expr(Parser self, int precedence_before) {
 			case TOK_SEMICOLON:
 			case TOK_CUSTOM_OPERATOR:
 				if (sub_expr) {
+					if (LOOKAHEAD(1).type == TOK_ASSIGN) RETURN(sub_expr);
 					char first_char = TOP().literal_text[0];
 					int precedence = precedence_of(first_char);
 					if (precedence >= (precedence_before | 1)) {

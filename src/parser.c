@@ -194,6 +194,7 @@ static AST_Node* node_create(Parser self, NodeType type) {
 #include "rules/atoms.h"
 #include "rules/expr.h"
 #include "rules/type.h"
+#include "rules/statements.h"
 #include "rules/toplevel.h"
 
 AST_Node* parser_execute(Parser self) {

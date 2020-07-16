@@ -12,6 +12,11 @@ typedef struct NODE_NAME {
 	const char* name;
 } AST_Name;
 
+typedef struct NODE_BLOCK {
+	AST_NODE_COMMON_FIELDS
+	AST_Node* ARRAY body;
+} AST_Block;
+
 typedef struct NODE_IMPORT {
 	AST_NODE_COMMON_FIELDS
 	AST_Name* local_name;
@@ -34,7 +39,7 @@ typedef struct NODE_FUNC_DEF {
 	AST_Name* name;
 	struct { const char* key; AST_Param* value; } MAP params;
 	AST_Node* ret_type;
-	AST_Node* ARRAY body;
+	AST_Block* body;
 	bool pub;
 } AST_FuncDef;
 
@@ -197,3 +202,61 @@ typedef struct NODE_UNION {
 	AST_NODE_COMMON_FIELDS
 	AST_Node* ARRAY variants;
 } AST_UnionType;
+
+typedef struct NODE_VAR_DECL {
+	AST_NODE_COMMON_FIELDS
+	AST_Name* name;
+	AST_Node* type;
+	AST_Node* value;
+	bool is_uninitialized;
+} AST_VarDecl;
+
+typedef struct NODE_OP_ASSIGN {
+	AST_NODE_COMMON_FIELDS
+	const char* op;
+	AST_Node* dest_expr;
+	AST_Node* src_expr;
+} AST_OpAssign;
+
+typedef struct NODE_ASSIGN {
+	AST_NODE_COMMON_FIELDS
+	AST_Node* ARRAY dest_exprs;
+	AST_Node* src_expr;
+} AST_AssignChain;
+
+typedef struct NODE_ASSIGN_MANY {
+	AST_NODE_COMMON_FIELDS
+	AST_Node* ARRAY dest_exprs;
+	AST_Node* ARRAY src_exprs;
+} AST_AssignParallel;
+
+typedef union {
+	NodeType node_type;
+	AST_AssignChain as_chain;
+	AST_AssignParallel as_parallel;
+} AST_Assignment;
+
+typedef struct NODE_IF_STMT {
+	AST_NODE_COMMON_FIELDS
+	AST_Node* condition;
+	AST_Block* body;
+	AST_Node* alternative;
+} AST_IfStatement;
+
+typedef struct NODE_WHILE_LOOP {
+	AST_NODE_COMMON_FIELDS
+	AST_Node* condition;
+	AST_Block* body;
+} AST_WhileLoop;
+
+typedef struct NODE_FOR_RANGE {
+	AST_NODE_COMMON_FIELDS
+	// ? ? ?
+} AST_ForRange;
+
+typedef struct NODE_FOR_LOOP {
+	AST_NODE_COMMON_FIELDS
+	// AST_Name* ARRAY range_names;
+	struct { const char* key; AST_ForRange* value } MAP ranges;
+	AST_Block* body;
+} AST_ForLoop;

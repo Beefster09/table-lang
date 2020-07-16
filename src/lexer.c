@@ -31,11 +31,12 @@ struct _lex_state {
 	int next_tok, tokens_buffered, total_tokens_emitted;
 	unsigned int line_no, column;
 	void* arena_block; // The arena used for literal text for tokens, raw lines, and strings
-	char* next_literal;  // Rolling pointer used for storing
-	char* string_buffer; // The rolling pointer where strings and identifiers get allocated
-	char* line_buffer;   // Rolling pointer used for storing lines of the file
-	const char** lines;
-	char* current_line;
+	// NOTE: these must be unsigned to make UTF-8 work correctly
+	unsigned char* next_literal;  // Rolling pointer used for storing literal tokens as strings
+	unsigned char* string_buffer; // The rolling pointer where strings and identifiers get allocated
+	unsigned char* line_buffer;   // Rolling pointer used for storing lines of the file
+	const unsigned char** lines;
+	unsigned char* current_line;
 	int line_offset;
 	int line_length;
 	bool is_last_line;
@@ -146,7 +147,6 @@ static int read_utf8_cont(Lexer self, int first, char** text_ptr) {
 	return result & ~antimask;
 }
 
-
 // NOTE: all characters are assumed to take up one column. This is not an accurate assumption. Notably:
 // Tab has a width of 4 or 8 - terminals use a width of 8
 // CJK characters typically have a width of 2
@@ -184,7 +184,7 @@ static Token* lexer_emit_token(Lexer self) {
 	current->start_line = current->end_line = self->line_no;
 	current->start_col = self->column;
 	current->literal_text = self->next_literal;
-	char* text_ptr = self->next_literal;
+	unsigned char* text_ptr = self->next_literal;
 	FWD();
 	switch (cur_ch) {
 		case EOF: {
