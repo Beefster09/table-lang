@@ -3,21 +3,22 @@
 //   Even = left associative
 //   Odd = right associative
 
-#define REREF_PRECEDENCE   150
-#define EXP_PRECEDENCE     101
-#define UNARY_PRECEDENCE    99
-#define MULDIV_PRECEDENCE   70
-#define ADDSUB_PRECEDENCE   60
-#define WORD_PRECEDENCE     50
-#define ORELSE_PRECEDENCE   40
-#define TERNARY_PRECEDENCE  30
-#define BAR_PRECEDENCE      20
-#define LAMBDA_PRECEDENCE   15
-#define CMP_PRECEDENCE      10
-#define NOT_PRECEDENCE       8
-#define AND_PRECEDENCE       6
-#define OR_PRECEDENCE        4
-#define SEMICOLON_PRECEDENCE 2
+#define REREF_PRECEDENCE     150
+#define EXP_PRECEDENCE       101
+#define UNARY_PRECEDENCE      99
+#define MULDIV_PRECEDENCE     80
+#define ADDSUB_PRECEDENCE     70
+#define WORD_PRECEDENCE       60
+#define ORELSE_PRECEDENCE     50
+#define TERNARY_PRECEDENCE    40
+#define BAR_PRECEDENCE        30
+#define LAMBDA_PRECEDENCE     25
+#define AWAIT_PRECEDENCE      20
+#define CMP_PRECEDENCE        10
+#define NOT_PRECEDENCE         8
+#define AND_PRECEDENCE         6
+#define OR_PRECEDENCE          4
+#define SEMICOLON_PRECEDENCE   2
 
 static int precedence_of(char first_char) {
 	switch (first_char) {
@@ -214,6 +215,41 @@ static AST_Node* expr(Parser self, int precedence_before) {
 				if (!sub_expr || TERNARY_PRECEDENCE < precedence_before) SYNTAX_ERROR("Unexpected 'else' in expression");
 				else RETURN(sub_expr);
 
+			case KW_ASYNC:
+				if (sub_expr) SYNTAX_ERROR("'async' must come before an expression, not after");
+				else {
+					NEW_NODE(async, NODE_ASYNC);
+					POP();  // 'async'
+					APPLY(async->target, expr, UNARY_PRECEDENCE);
+					FINISH(async);
+					sub_expr = async;
+				}
+				break;
+
+			case KW_AWAIT:
+				if (sub_expr) SYNTAX_ERROR("'await' must come before an expression, not after");
+				else {
+					NEW_NODE(await, NODE_AWAIT);
+					POP();  // 'await'
+					APPLY(await->target, expr, UNARY_PRECEDENCE);
+					FINISH(await);
+					sub_expr = await;
+				}
+				break;
+
+			case KW_TYPE:
+				if (sub_expr) SYNTAX_ERROR("'type' must precede a type");
+				else {
+					POP();  // 'type'
+					if (TOP().type == TOK_LSQUARE) {
+						POP();  // '['
+						APPLY(sub_expr, type, 0);
+						CONSUME(TOK_RSQUARE, "Bracketed type must end with a ']'");
+					}
+					else APPLY(sub_expr, type, 0);
+				}
+				break;
+
 			case TOK_LPAREN:
 				if (sub_expr) {
 					POP();  // '('
@@ -232,10 +268,18 @@ static AST_Node* expr(Parser self, int precedence_before) {
 
 			case TOK_LSQUARE:
 				if (sub_expr) {
-					POP();  // '['
-					APPLY(sub_expr, subscript, sub_expr);
-					EXPECT(TOK_RSQUARE, "Expected ']' at end of subscript");
-					POP();  // ']'
+					if (LOOKAHEAD(1).type == TOK_STAR && LOOKAHEAD(2).type == TOK_RSQUARE) {
+						NEW_NODE_FROM(broadcast, NODE_BROADCAST, sub_expr);
+						POP(); POP(); POP();  // [*]
+						broadcast->target = sub_expr;
+						sub_expr = broadcast;
+					}
+					else {
+						POP();  // '['
+						APPLY(sub_expr, subscript, sub_expr);
+						EXPECT(TOK_RSQUARE, "Expected ']' at end of subscript");
+						POP();  // ']'
+					}
 				}
 				else {
 					POP();  // '['

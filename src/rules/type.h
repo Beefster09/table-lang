@@ -192,31 +192,31 @@ static AST_ArrayType* array_type(Parser self, AST_Node* element_type) {
 			int dim_count = TOP().int_value;
 			if (dim_count == 0) SYNTAX_ERROR_NONFATAL("Arrays cannot be zero-dimensional");
 			POP();
-			for (int i = 0; i < dim_count; i++) arrpush(array->dimensions, -1);
+			for (int i = 0; i < dim_count; i++) arrpush(array->dimensions, NULL);
 			break;
 
 		case TOK_RSQUARE:
 			array->is_dynamic = true;
 			break;
 
-		case TOK_INT: case TOK_STAR:
+		default:
 			do {
-				if (TOP().type == TOK_INT) {
-					arrpush(array->dimensions, POP().int_value);
+				if (TOP().type == TOK_QMARK) {
+					POP();
+					arrpush(array->dimensions, NULL);
 				}
 				else {
-					POP();
-					arrpush(array->dimensions, -1);
+					APPEND(array->dimensions, expr, 0);
 				}
 
 				if (TOP().type == TOK_RSQUARE) break;
 				EXPECT(TOK_COMMA, "Expected comma or end of array dimensions");
 				POP();  // ','
 
-			} while (TOP().type == TOK_INT || TOP().type == TOK_STAR);
+			} while (TOP().type != TOK_RSQUARE);
 			break;
 
-		default: SYNTAX_ERROR("Expected dimensionality information or empty square brackets");
+		// default: SYNTAX_ERROR("Expected dimensionality information or empty square brackets");
 	}
 
 	EXPECT(TOK_RSQUARE, "Expected right square bracket to end array dimensions");

@@ -1,4 +1,16 @@
 
+#define END_STMT(retval, fmt, ...) do { \
+	FINISH(retval); \
+	switch (TOP().type) { \
+		case TOK_EOL: \
+			POP(); \
+		case TOK_RBRACE: \
+			return retval; \
+		default: \
+			SYNTAX_ERROR("Expected end-of-line or '}' at end of " fmt, ##__VA_ARGS__); \
+	} \
+} while (0);
+
 static AST_Node* statement(Parser self) {
 	AST_Node* stmt = 0;
 	while (!stmt) {
@@ -20,8 +32,9 @@ static AST_Node* statement(Parser self) {
 				if (expression) {
 					switch (TOP().type) {
 						case TOK_ASSIGN:
-						case TOK_COMMA:
 							return assignment(self, expression);
+						case TOK_COMMA: // maybe there's multiple things that can happen here?
+							return assign_many(self, expression);
 						case TOK_PLUS:
 						case TOK_MINUS:
 						case TOK_STAR:
@@ -66,8 +79,7 @@ static AST_VarDecl* declaration(Parser self) {
 			break;
 		default: SYNTAX_ERROR("Unexpected token after type of variable declaration");
 	}
-	CONSUME(TOK_EOL, "Expected end of line at end of variable declaration");
-	RETURN(var);
+	END_STMT(var, "variable declaration");
 }
 
 static AST_Block* block(Parser self) {
@@ -137,10 +149,45 @@ static AST_ForLoop* for_loop(Parser self) {
 	SYNTAX_ERROR("for loops are not yet implemented");
 }
 
-static AST_Assignment* assignment(Parser self, AST_Node* lhs) {
-	SYNTAX_ERROR("Assignments are not yet implemented");
+static AST_AssignChain* assignment(Parser self, AST_Node* lhs) {
+	NEW_NODE_FROM(assign, NODE_ASSIGN, lhs);
+	arrpush(assign->dest_exprs, lhs);
+	while (1) {
+		POP();  // '='
+		AST_Node* part;
+		APPLY(part, expr, 0);
+		if (TOP().type == TOK_ASSIGN) {
+			arrpush(assign->dest_exprs, part);
+		}
+		else {
+			assign->src_expr = part;
+			switch (TOP().type) {
+				case TOK_PLUS:
+				case TOK_MINUS:
+				case TOK_STAR:
+				case TOK_SLASH:
+				case TOK_TILDE:
+				case TOK_PERCENT:
+				case TOK_CARET:
+				case TOK_AMP:
+				case TOK_BAR:
+				case TOK_CUSTOM_OPERATOR:
+					SYNTAX_ERROR("Compound assignments cannot be chained.");
+			}
+			END_STMT(assign, "assignment%s", (arrlen(assign->dest_exprs) > 1)? " chain" : "");
+		}
+	}
+}
+
+static AST_AssignParallel* assign_many(Parser self, AST_Node* ARRAY lhs) {
+	SYNTAX_ERROR("Parallel assignments are not yet implemented");
 }
 
 static AST_OpAssign* op_assignment(Parser self, AST_Node* lhs) {
-	SYNTAX_ERROR("Op-assignments are not yet implemented");
+	NEW_NODE_FROM(assign, NODE_OP_ASSIGN, lhs);
+	assign->dest_expr = lhs;
+	assign->op = POP().literal_text;
+	CONSUME(TOK_ASSIGN, "Expected '=' in '%s' compound assignment", assign->op);
+	APPLY(assign->src_expr, expr, 0);
+	END_STMT(assign, "'%s' compound assignment", assign->op);
 }

@@ -1,6 +1,7 @@
 #pragma once
 
 // ... Assumed to be coming from ast.h
+#define DIM_VAR_FIXED -1
 
 typedef struct NODE_QUALNAME {
 	AST_NODE_COMMON_FIELDS
@@ -137,6 +138,21 @@ typedef struct NODE_REREFERENCE {
 	int levels;
 } AST_Reref;
 
+typedef struct NODE_BROADCAST {
+	AST_NODE_COMMON_FIELDS
+	AST_Node* target;
+} AST_Broadcast;
+
+typedef struct NODE_ASYNC {
+	AST_NODE_COMMON_FIELDS
+	AST_Node* target;
+} AST_Async;
+
+typedef struct NODE_AWAIT {
+	AST_NODE_COMMON_FIELDS
+	AST_Node* target;
+} AST_Await;
+
 typedef struct NODE_ARRAY {
 	AST_NODE_COMMON_FIELDS
 	AST_Node* ARRAY elements;
@@ -179,9 +195,9 @@ typedef struct NODE_POINTER_TYPE {
 typedef struct NODE_ARRAY_TYPE {
 	AST_NODE_COMMON_FIELDS
 	AST_Node* element_type;
-	size_t ARRAY dimensions;
-	// empty/null = any dimensionality
-	// negative value in slot = fixed runtime size
+	AST_Node* ARRAY dimensions;
+	// whole array is empty/null = any dimensionality
+	// null value in slot = fixed size determined at runtime
 	bool is_dynamic;
 	bool is_mutable;
 	bool is_nullable;
@@ -260,3 +276,14 @@ typedef struct NODE_FOR_LOOP {
 	struct { const char* key; AST_ForRange* value } MAP ranges;
 	AST_Block* body;
 } AST_ForLoop;
+
+typedef struct NODE_MATCH_CASE {
+	AST_NODE_COMMON_FIELDS
+	AST_Node* ARRAY patterns;
+	AST_Block* body;
+} AST_MatchCase;
+
+typedef struct NODE_MATCH {
+	AST_NODE_COMMON_FIELDS
+	AST_MatchCase* ARRAY patterns;
+} AST_Match;
