@@ -163,6 +163,8 @@ static int read_utf8_cont(Lexer self, int first, char** text_ptr) {
 	lexer_backc(self); \
 } while (0)
 
+#define PEEK(I) (self->current_line[self->line_offset + I])
+
 #define EMIT(TOKTYPE) do { \
 	current->type = TOKTYPE; \
 	*text_ptr++ = 0; \
@@ -349,10 +351,20 @@ static Token* lexer_emit_token(Lexer self) {
 							else goto handle_int;
 						}
 					case '.': // float
+						switch (PEEK(0)) {
+							case '0':
+							case '1': case '2': case '3':
+							case '4': case '5': case '6':
+							case '7': case '8': case '9':
+							case ' ': case '\t': case '\n': case '\r':
+								break;
+							default:
+								goto just_zero;
+						}
 						*digit++ = cur_ch;
 						goto handle_float;
 
-					default:
+					default: just_zero:
 						current->int_value = 0;
 						BACK();
 						EMIT(TOK_INT);
@@ -374,6 +386,14 @@ static Token* lexer_emit_token(Lexer self) {
 				FWD();
 				if (cur_ch == '_') continue;
 				else if (cur_ch == '.') {
+					switch (PEEK(0)) {
+						case '0':
+						case '1': case '2': case '3':
+						case '4': case '5': case '6':
+						case '7': case '8': case '9':
+							break;
+						default: BACK(); goto handle_int;
+					}
 					*digit++ = cur_ch;
 					goto handle_float;
 				}

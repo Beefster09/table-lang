@@ -16,7 +16,7 @@ static AST_Const* const_def(Parser self) {
 			// drop through is intentional
 		case TOK_ASSIGN:
 			POP();  // '='
-			APPLY(constant->value, expr, 0);
+			APPLY(constant->value, expression, 0);
 			break;
 		default: SYNTAX_ERROR("Expected ':' or '=' after constant name");
 	}
@@ -135,7 +135,7 @@ static AST_FuncDef* func_def(Parser self) {
 		if (TOP().type == TOK_ASSIGN) {
 			if (param->is_vararg) SYNTAX_ERROR_NONFATAL("Varargs cannot have a default value");
 			POP();
-			APPLY(param->default_value, expr, 0);
+			APPLY(param->default_value, expression, 0);
 		}
 		shput(func->params, param->name->name, param);
 		if (TOP().type == TOK_COMMA) {

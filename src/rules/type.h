@@ -192,7 +192,8 @@ static AST_ArrayType* array_type(Parser self, AST_Node* element_type) {
 			int dim_count = TOP().int_value;
 			if (dim_count == 0) SYNTAX_ERROR_NONFATAL("Arrays cannot be zero-dimensional");
 			POP();
-			for (int i = 0; i < dim_count; i++) arrpush(array->dimensions, NULL);
+			arrsetlen(array->shape, dim_count);
+			for (int i = 0; i < dim_count; i++) array->shape[i] = NULL;
 			break;
 
 		case TOK_RSQUARE:
@@ -203,10 +204,10 @@ static AST_ArrayType* array_type(Parser self, AST_Node* element_type) {
 			do {
 				if (TOP().type == TOK_QMARK) {
 					POP();
-					arrpush(array->dimensions, NULL);
+					arrpush(array->shape, NULL);
 				}
 				else {
-					APPEND(array->dimensions, expr, 0);
+					APPEND(array->shape, expression, 0);
 				}
 
 				if (TOP().type == TOK_RSQUARE) break;

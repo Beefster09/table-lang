@@ -1,7 +1,6 @@
 #pragma once
 
 // ... Assumed to be coming from ast.h
-#define DIM_VAR_FIXED -1
 
 typedef struct NODE_QUALNAME {
 	AST_NODE_COMMON_FIELDS
@@ -195,8 +194,9 @@ typedef struct NODE_POINTER_TYPE {
 typedef struct NODE_ARRAY_TYPE {
 	AST_NODE_COMMON_FIELDS
 	AST_Node* element_type;
-	AST_Node* ARRAY dimensions;
-	// whole array is empty/null = any dimensionality
+	AST_Node* ARRAY shape;
+	// shape is empty or null & is_dynamic = dynamically resizable 1-dimensional array
+	// shape is empty or null & !is_dynamic = fixed shape of any dimensionality determined at runtime
 	// null value in slot = fixed size determined at runtime
 	bool is_dynamic;
 	bool is_mutable;
@@ -265,16 +265,37 @@ typedef struct NODE_WHILE_LOOP {
 	AST_Block* body;
 } AST_WhileLoop;
 
+typedef struct NODE_FOR_SIMPLE {
+	AST_NODE_COMMON_FIELDS
+	AST_Name* name;
+	AST_Node* iterable;
+} AST_ForSimple;
+
 typedef struct NODE_FOR_RANGE {
 	AST_NODE_COMMON_FIELDS
-	// ? ? ?
+	AST_Name* name;
+	AST_Node* start;
+	AST_Node* end;
 } AST_ForRange;
+
+typedef struct NODE_FOR_PARALLEL {
+	AST_NODE_COMMON_FIELDS
+	AST_Name* ARRAY names;
+	struct { const char* key; AST_Node* value; } MAP zips;
+} AST_ForParallel;
+
+typedef enum FOR_ {
+	FOR_NORMAL   = 0,
+	FOR_PARALLEL = 1,
+	FOR_GPU      = 2,
+} ForMode;
 
 typedef struct NODE_FOR_LOOP {
 	AST_NODE_COMMON_FIELDS
-	// AST_Name* ARRAY range_names;
-	struct { const char* key; AST_ForRange* value } MAP ranges;
+	AST_Node* ARRAY iterables;
 	AST_Block* body;
+	// ForMode mode;
+	int mode;
 } AST_ForLoop;
 
 typedef struct NODE_MATCH_CASE {

@@ -97,8 +97,8 @@ static AST_Node* node_create(Parser self, NodeType type) {
 #define NEW_NODE_FROM(N, T, B) \
 	struct T* N = node_create(self, T); \
 	do { \
-		N->start_line = B->start_line; \
-		N->start_col = B->start_col; \
+		N->start_line = (B)->start_line; \
+		N->start_col = (B)->start_col; \
 	} while (0)
 
 #define OUTPUT_ERROR(l0, c0, l1, c1, err_type, fmt, ...) do { \

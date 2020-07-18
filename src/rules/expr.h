@@ -55,7 +55,7 @@ static bool is_comparison(int type) {
 	}
 }
 
-static AST_Node* expr(Parser self, int precedence_before) {
+static AST_Node* expression(Parser self, int precedence_before) {
 	AST_Node* sub_expr = 0;
 	bool ternary_seen = TERNARY_PRECEDENCE == precedence_before;  // to make ternary non-associative
 	while (1) {
@@ -95,7 +95,7 @@ static AST_Node* expr(Parser self, int precedence_before) {
 			case TOK_AMP:
 			case TOK_BAR:
 			case TOK_QMARK:
-			case TOK_SEMICOLON:
+			// case TOK_SEMICOLON:
 			case TOK_CUSTOM_OPERATOR:
 				if (sub_expr) {
 					if (LOOKAHEAD(1).type == TOK_ASSIGN) RETURN(sub_expr);
@@ -105,7 +105,7 @@ static AST_Node* expr(Parser self, int precedence_before) {
 						NEW_NODE_FROM(op, NODE_BINOP, sub_expr);
 						op->lhs = sub_expr;
 						op->op = POP().literal_text;
-						APPLY(op->rhs, expr, precedence_of(op->op[0]));
+						APPLY(op->rhs, expression, precedence_of(op->op[0]));
 						FINISH(op);
 						sub_expr = op;
 					}
@@ -114,7 +114,7 @@ static AST_Node* expr(Parser self, int precedence_before) {
 				else {
 					NEW_NODE(op, NODE_UNARY);
 					op->op = POP().literal_text;
-					APPLY(op->expr, expr, UNARY_PRECEDENCE);
+					APPLY(op->expr, expression, UNARY_PRECEDENCE);
 					FINISH(op);
 					sub_expr = op;
 				}
@@ -129,7 +129,7 @@ static AST_Node* expr(Parser self, int precedence_before) {
 						reref->levels++;
 					}
 					while (TOP().type == TOK_AT);
-					APPLY(reref->target, expr, REREF_PRECEDENCE);
+					APPLY(reref->target, expression, REREF_PRECEDENCE);
 					FINISH(reref);
 					sub_expr = reref;
 				}
@@ -140,7 +140,7 @@ static AST_Node* expr(Parser self, int precedence_before) {
 				else {
 					POP();  // 'not'
 					NEW_NODE(op, NODE_NOT);
-					APPLY(op->expr, expr, UNARY_PRECEDENCE);
+					APPLY(op->expr, expression, UNARY_PRECEDENCE);
 					FINISH(op);
 					sub_expr = op;
 				}
@@ -152,7 +152,7 @@ static AST_Node* expr(Parser self, int precedence_before) {
 					POP();  // 'and'
 					NEW_NODE_FROM(op, NODE_AND, sub_expr);
 					op->lhs = sub_expr;
-					APPLY(op->rhs, expr, AND_PRECEDENCE);
+					APPLY(op->rhs, expression, AND_PRECEDENCE);
 					FINISH(op);
 					sub_expr = op;
 				}
@@ -165,7 +165,7 @@ static AST_Node* expr(Parser self, int precedence_before) {
 					POP();  // 'or'
 					NEW_NODE_FROM(op, NODE_OR, sub_expr);
 					op->lhs = sub_expr;
-					APPLY(op->rhs, expr, OR_PRECEDENCE);
+					APPLY(op->rhs, expression, OR_PRECEDENCE);
 					FINISH(op);
 					sub_expr = op;
 				}
@@ -185,7 +185,7 @@ static AST_Node* expr(Parser self, int precedence_before) {
 					do {
 						const char* cmp = POP().literal_text;  // TODO: consider enum representations
 						arrpush(chain->comparisons, cmp);
-						APPEND(chain->operands, expr, CMP_PRECEDENCE);
+						APPEND(chain->operands, expression, CMP_PRECEDENCE);
 					} while (is_comparison(TOP().type));
 					FINISH(chain);
 					sub_expr = chain;
@@ -200,10 +200,10 @@ static AST_Node* expr(Parser self, int precedence_before) {
 					NEW_NODE_FROM(ternary, NODE_TERNARY, sub_expr);
 					ternary->true_expr = sub_expr;
 					POP();  // 'if'
-					APPLY(ternary->condition, expr, 0);
+					APPLY(ternary->condition, expression, 0);
 					EXPECT(KW_ELSE, "Expected 'else' after ternary condition");
 					POP(); // 'else'
-					APPLY(ternary->false_expr, expr, TERNARY_PRECEDENCE);
+					APPLY(ternary->false_expr, expression, TERNARY_PRECEDENCE);
 					FINISH(ternary);
 					sub_expr = ternary;
 					ternary_seen = true;
@@ -220,7 +220,7 @@ static AST_Node* expr(Parser self, int precedence_before) {
 				else {
 					NEW_NODE(async, NODE_ASYNC);
 					POP();  // 'async'
-					APPLY(async->target, expr, UNARY_PRECEDENCE);
+					APPLY(async->target, expression, UNARY_PRECEDENCE);
 					FINISH(async);
 					sub_expr = async;
 				}
@@ -231,7 +231,7 @@ static AST_Node* expr(Parser self, int precedence_before) {
 				else {
 					NEW_NODE(await, NODE_AWAIT);
 					POP();  // 'await'
-					APPLY(await->target, expr, UNARY_PRECEDENCE);
+					APPLY(await->target, expression, UNARY_PRECEDENCE);
 					FINISH(await);
 					sub_expr = await;
 				}
@@ -259,7 +259,7 @@ static AST_Node* expr(Parser self, int precedence_before) {
 				}
 				else {
 					POP();  // '('
-					APPLY(sub_expr, expr, 0);
+					APPLY(sub_expr, expression, 0);
 					EXPECT(TOK_RPAREN, "Expected ')' at end of parenthesized sub-expression");
 					POP();  // ')'
 				}
@@ -321,14 +321,14 @@ static AST_FuncCall* word_op(Parser self, AST_Node* left_side) {
 	op->is_word_op = true;
 	APPLY(op->func, qualname);
 	arrpush(op->pos_args, left_side);
-	APPEND(op->pos_args, expr, WORD_PRECEDENCE);
+	APPEND(op->pos_args, expression, WORD_PRECEDENCE);
 	RETURN(op);
 }
 
 static AST_Array* array_literal(Parser self) {
 	NEW_NODE(sub, NODE_ARRAY);
 	do {
-		APPEND(sub->elements, expr, 0);
+		APPEND(sub->elements, expression, 0);
 		if (TOP().type == TOK_COMMA) POP();
 		else if (TOP().type != TOK_RSQUARE) SYNTAX_ERROR("Expected a comma here.");
 	} while (TOP().type != TOK_RSQUARE);
@@ -353,12 +353,12 @@ static AST_FuncCall* func_call(Parser self, AST_Node* func) {
 				sh_new_arena(call->kw_args);
 			}
 			AST_Node* value;
-			APPLY(value, expr, 0);
+			APPLY(value, expression, 0);
 			shput(call->kw_args, key, value);
 		}
 		else {
 			if (seen_kwarg) SYNTAX_ERROR_NONFATAL("Positional arguments cannot be supplied after named arguments.");
-			APPEND(call->pos_args, expr, 0);
+			APPEND(call->pos_args, expression, 0);
 		}
 		if (TOP().type == TOK_COMMA) POP();
 		else if (TOP().type != TOK_RPAREN) SYNTAX_ERROR("Expected a comma here.");
@@ -370,7 +370,7 @@ static AST_Subscript* subscript(Parser self, AST_Node* array) {
 	NEW_NODE_FROM(sub, NODE_SUBSCRIPT, array);
 	sub->array = array;
 	do {
-		APPEND(sub->subscripts, expr, 0);
+		APPEND(sub->subscripts, expression, 0);
 		// TODO: slices
 		// if (TOP().type == TOK_RANGE) { ... }
 		if (TOP().type == TOK_COMMA) POP();

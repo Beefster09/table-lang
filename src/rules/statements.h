@@ -12,7 +12,7 @@
 } while (0);
 
 static AST_Node* statement(Parser self) {
-	AST_Node* stmt = 0;
+	AST_Node* stmt = NULL;
 	while (!stmt) {
 		switch (TOP().type) {
 			case TOK_EOL: POP(); return NULL;
@@ -28,13 +28,13 @@ static AST_Node* statement(Parser self) {
 				}
 				// Drop-thru is intentional
 			default: {
-				AST_Node* expression = expr(self, 0);
-				if (expression) {
+				AST_Node* expr = expression(self, 0);
+				if (expr) {
 					switch (TOP().type) {
 						case TOK_ASSIGN:
-							return assignment(self, expression);
+							return assignment(self, expr);
 						case TOK_COMMA: // maybe there's multiple things that can happen here?
-							return assign_many(self, expression);
+							return assign_many(self, expr);
 						case TOK_PLUS:
 						case TOK_MINUS:
 						case TOK_STAR:
@@ -45,10 +45,11 @@ static AST_Node* statement(Parser self) {
 						case TOK_AMP:
 						case TOK_BAR:
 						case TOK_CUSTOM_OPERATOR:
-							return op_assignment(self, expression);
+							return op_assignment(self, expr);
 						case TOK_EOL:
-							POP();
-							return expression;
+							POP();  // drop through is intentional
+						case TOK_RBRACE: // allow inline expressions
+							return expr;
 						default:
 							SYNTAX_ERROR("Expected end of line or assignment here");
 					}
@@ -57,6 +58,7 @@ static AST_Node* statement(Parser self) {
 			}
 		}
 	}
+	return stmt;
 }
 
 static AST_VarDecl* declaration(Parser self) {
@@ -75,7 +77,7 @@ static AST_VarDecl* declaration(Parser self) {
 			break;
 		case TOK_ASSIGN:
 			POP();  // '='
-			APPLY(var->value, expr, 0);
+			APPLY(var->value, expression, 0);
 			break;
 		default: SYNTAX_ERROR("Unexpected token after type of variable declaration");
 	}
@@ -112,7 +114,7 @@ static AST_Block* block(Parser self) {
 static AST_IfStatement* if_stmt(Parser self) {
 	NEW_NODE(cond, NODE_IF_STMT);
 	POP();  // 'if'
-	APPLY(cond->condition, expr, 0);
+	APPLY(cond->condition, expression, 0);
 	while (TOP().type == TOK_EOL) POP();  // support ALL the brace styles
 	EXPECT(TOK_LBRACE, "Expected if condition to be followed by a block");
 	APPLY(cond->body, block);
@@ -136,17 +138,114 @@ static AST_IfStatement* if_stmt(Parser self) {
 static AST_WhileLoop* while_loop(Parser self) {
 	NEW_NODE(loop, NODE_WHILE_LOOP);
 	POP();  // 'while'
-	APPLY(loop->condition, expr, 0);
+	APPLY(loop->condition, expression, 0);
 	while (TOP().type == TOK_EOL) POP();  // support ALL the brace styles
 	EXPECT(TOK_LBRACE, "Expected while condition to be followed by a block");
 	APPLY(loop->body, block);
 	RETURN(loop);
 }
 
+inline static AST_Node* for_simple_or_range(Parser self, AST_Name* name, AST_Node* expr) {
+	AST_Node* base = name? name : expr;
+	if (expr) {
+		if (TOP().type == TOK_RANGE) {
+			NEW_NODE_FROM(range, NODE_FOR_RANGE, base);
+			POP();  // '..'
+			range->name = name;
+			range->start = expr;
+			switch (TOP().type) {
+				case TOK_LBRACE:
+				case TOK_SEMICOLON:
+					break;
+				default:
+					APPLY(range->end, expression, 0);
+			}
+			RETURN(range);
+		}
+		else {
+			NEW_NODE_FROM(simple, NODE_FOR_SIMPLE, base);
+			simple->name = name;
+			simple->iterable = expr;
+			RETURN(simple);
+		}
+	}
+	else return NULL;
+}
+
+static AST_Node* for_range(Parser self) {
+	if (TOP().type == TOK_IDENT) {
+		switch (LOOKAHEAD(1).type) {
+			case TOK_COLON: {
+				AST_Name* name = simple_name(self);
+				POP();  // ':'
+				AST_Node* expr = expression(self, 0);
+				return for_simple_or_range(self, name, expr);
+			}
+
+			case TOK_COMMA: {
+				NEW_NODE(parallel, NODE_FOR_PARALLEL);
+				while (1) {
+					APPEND(parallel->names, simple_name);
+					if (TOP().type == TOK_COMMA) {
+						POP();
+						if (TOP().type == TOK_COLON) break;  // Allow trailing comma
+					}
+					else break;
+				}
+				CONSUME(TOK_COLON, "Expected a colon in zipped for range");
+				int n_vars = arrlen(parallel->names);
+				for (int i = 0; i < n_vars; i++) {
+					AST_Node* iterable = expression(self, 0);
+					if (iterable) {
+						const char* key = parallel->names[i]->name;
+						if (shgeti(parallel->zips, key) >= 0) {
+							SYNTAX_ERROR_FROM_NONFATAL(
+								parallel->names[i],
+								"Repeated variable name '%s' on left side of zipped for range",
+								key
+							);
+						}
+						shput(parallel->zips, key, iterable);
+					}
+					else return NULL;
+					if (i + 1 < n_vars) {
+						CONSUME(TOK_COMMA, "Expected comma in zipped for range");
+					}
+					else if (TOP().type == TOK_COMMA) POP(); // Allow trailing comma
+				}
+				switch (TOP().type) {
+					case TOK_LBRACE:
+					case TOK_SEMICOLON:
+						RETURN(parallel);
+					default:
+						SYNTAX_ERROR("Unexpected token on right side of zipped for range"
+							" (perhaps there are too many expressions)");
+				}
+			}
+
+			default: break;
+		}
+	}
+	AST_Node* expr = expression(self, 0);
+	return for_simple_or_range(self, NULL, expr);
+}
+
 static AST_ForLoop* for_loop(Parser self) {
 	NEW_NODE(loop, NODE_FOR_LOOP);
 	POP();  // 'for'
-	SYNTAX_ERROR("for loops are not yet implemented");
+	while (1) {
+		APPEND(loop->iterables, for_range);
+		if (TOP().type == TOK_SEMICOLON) {
+			POP();  // ';'
+			while (TOP().type == TOK_EOL) POP();  // Allow each range to appear on its own line
+			if (TOP().type == TOK_LBRACE) break;  // Allow trailing semicolon
+		}
+		else break;
+	}
+	while (TOP().type == TOK_EOL) POP();  // support ALL the brace styles
+	EXPECT(TOK_LBRACE, "Expected body of for loop");
+	APPLY(loop->body, block);
+	RETURN(loop);
 }
 
 static AST_AssignChain* assignment(Parser self, AST_Node* lhs) {
@@ -155,7 +254,7 @@ static AST_AssignChain* assignment(Parser self, AST_Node* lhs) {
 	while (1) {
 		POP();  // '='
 		AST_Node* part;
-		APPLY(part, expr, 0);
+		APPLY(part, expression, 0);
 		if (TOP().type == TOK_ASSIGN) {
 			arrpush(assign->dest_exprs, part);
 		}
@@ -172,7 +271,7 @@ static AST_AssignChain* assignment(Parser self, AST_Node* lhs) {
 				case TOK_AMP:
 				case TOK_BAR:
 				case TOK_CUSTOM_OPERATOR:
-					SYNTAX_ERROR("Compound assignments cannot be chained.");
+					SYNTAX_ERROR("Compound assignments cannot be part of an assignment chain.");
 			}
 			END_STMT(assign, "assignment%s", (arrlen(assign->dest_exprs) > 1)? " chain" : "");
 		}
@@ -188,6 +287,6 @@ static AST_OpAssign* op_assignment(Parser self, AST_Node* lhs) {
 	assign->dest_expr = lhs;
 	assign->op = POP().literal_text;
 	CONSUME(TOK_ASSIGN, "Expected '=' in '%s' compound assignment", assign->op);
-	APPLY(assign->src_expr, expr, 0);
+	APPLY(assign->src_expr, expression, 0);
 	END_STMT(assign, "'%s' compound assignment", assign->op);
 }
