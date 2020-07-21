@@ -1,5 +1,136 @@
 // To be included *only* from parser.c
 
+static int toplevel_item(Parser self, AST_Module* module) {
+	while (TOP().type == TOK_EOL) POP();  // filter empty lines
+
+	bool is_pub = TOP().type == KW_PUB? (POP(), true) : false;
+
+	switch (TOP().type) {
+		case KW_PUB:
+			if (is_pub) SYNTAX_ERROR("Repeated 'pub'");
+			break;
+		case KW_IMPORT: {
+			if (is_pub) SYNTAX_ERROR_NONFATAL("'pub' cannot be applied to import statements");
+			AST_Import* imp = import(self);
+			if (imp) {
+				if (imp->local_name) {
+					if (shgeti(module->scope, imp->local_name->name) >= 0) {
+						SYNTAX_ERROR_FROM_NONFATAL(imp->local_name, "Something named '%s' already exists in this module.", imp->local_name->name);
+					}
+					// arrpush(module->imports, imp);
+					shput(module->scope, imp->local_name->name, imp);
+					return module;
+				}
+				else if (imp->is_using) {
+					char namebuf[32];
+					snprintf(namebuf, sizeof(namebuf), ".import_%d", shlen(module->scope));
+					shput(module->scope, namebuf, imp);
+				}
+			}
+			else return 0;
+		} break;
+		case KW_FUNC: {
+			AST_FuncDef* func = func_def(self);
+			if (func) {
+				if (!func->name) {
+					OUTPUT_ERROR(
+						func->start_line, func->start_col + 4,
+						func->start_line, func->start_col + 4,
+						"Error", "This function in module scope does not have a name.");
+					self->error_count++;
+					return 0;
+				}
+				AST_Node* maybe_overload = shget(module->scope, func->name->name);
+				if (maybe_overload) {
+					if (maybe_overload->node_type == NODE_FUNC_OVERLOAD) {
+						arrpush(((AST_FuncOverload*) maybe_overload)->overloads, func);
+					}
+					else {
+						SYNTAX_ERROR_FROM(func->name, "Function definition for '%s' conflicts with something already in scope.", func->name->name);
+					}
+				}
+				else {
+					AST_FuncOverload* overload = node_create(self, NODE_FUNC_OVERLOAD);
+					overload->name = func->name->name;
+					arrpush(overload->overloads, func);
+					shput(module->scope, overload->name, overload);
+				}
+				CONSUME(TOK_EOL, "Expected end-of-line after function definition");
+				return 1;
+			}
+			else return 0;
+		} break;
+		case KW_CONST: {
+			POP(); // 'const'
+			if (TOP().type == TOK_LBRACE) {
+				// multiple constants
+				POP(); // '{'
+				EXPECT(TOK_EOL, "Expected end of line to begin const block.");
+				POP(); // EOL
+				while (TOP().type != TOK_RBRACE) {
+					if (TOP().type == TOK_EOL) { // skip empty lines
+						POP();
+						continue;
+					}
+					AST_Const* constant = const_def(self);
+					if (constant) {
+						constant->pub = is_pub;
+						if (shgeti(module->scope, constant->name->name) >= 0) {
+							SYNTAX_ERROR_FROM_NONFATAL(constant->name, "Something named '%s' already exists in this module.", constant->name->name);
+						}
+						shput(module->scope, constant->name->name, constant);
+					}
+					else return 0;
+					EXPECT(TOK_EOL, "Expected end of line after block constant");
+					POP(); // EOL
+				}
+				POP(); // '}'
+				EXPECT(TOK_EOL, "Expected end of line after const block");
+				return 0;
+			}
+			else {
+				AST_Const* constant = const_def(self);
+				if (constant) {
+					constant->pub = is_pub;
+					if (shgeti(module->scope, constant->name->name) >= 0) {
+						SYNTAX_ERROR_FROM_NONFATAL(constant->name, "Something named '%s' already exists in this module.", constant->name->name);
+					}
+					shput(module->scope, constant->name->name, constant);
+				}
+				else return 0;
+				EXPECT(TOK_EOL, "Expected end of line after const");
+				POP();
+				return 1;
+			}
+		} break;
+		case KW_TEST: {
+			AST_Test* test = test_def(self);
+			if (test) {
+				arrpush(module->tests, test);
+				CONSUME(TOK_EOL, "Expected end-of-line after test");
+				return 1;
+			}
+			else return 0;
+		} break;
+		// case KW_STRUCT: APPEND_DECL(struct_def);
+		// case KW_TABLE: APPEND_DECL(table_def);
+		case TOK_RPAREN: SYNTAX_ERROR("Unmatched parenthesis");
+		case TOK_RBRACE: SYNTAX_ERROR("Unmatched curly brace");
+		case TOK_RSQUARE: SYNTAX_ERROR("Unmatched square bracket");
+		case TOK_EOL:
+			if (is_pub) {
+				SYNTAX_ERROR("'pub' must by followed by a top-level declaration");
+			}
+			// drop-through is intentional
+		case TOK_EOF:
+			return 1;
+		default:
+			SYNTAX_ERROR("Top level scope cannot begin with '%s'", _token_);
+	}
+	CONSUME(TOK_EOL, "Expected end-of-line after top-level declaration");
+	return 0;
+}
+
 static AST_Const* const_def(Parser self) {
 	NEW_NODE(constant, NODE_CONST);
 
@@ -36,11 +167,31 @@ static AST_Import* import(Parser self) {
 	NEW_NODE(imp, NODE_IMPORT);
 	POP();  // 'import'
 	switch (TOP().type) {
+		case KW_USING: {  // 'using' form
+			imp->is_using = true;
+			POP();
+			switch (TOP().type) {
+				case TOK_STRING:
+					imp->imported_file = POP().str_value;
+					EXPECT(TOK_EOL, "Expected end-of-line after 'using' pathname import");
+					RETURN(imp);
+				case TOK_IDENT: {
+					NEW_NODE(local_name, NODE_NAME);
+					imp->local_name = local_name;
+					APPLY(imp->qualified_name, qualname);
+					local_name->name = join_qualname(self, imp->qualified_name);
+					FINISH(local_name);
+					EXPECT(TOK_EOL, "Expected end-of-line after 'using' qualified name import");
+					RETURN(imp);
+				}
+				default: SYNTAX_ERROR("Invalid target of 'using' import");
+			}
+		}
 		case TOK_IDENT: break; // valid, but not sure which form this is
 		case TOK_EOL: SYNTAX_ERROR("import statement is missing its target");
 		default: SYNTAX_ERROR("Invalid target of import");
 	}
-	// Note: first token is an identifier
+	// First token is an identifier
 	switch (LOOKAHEAD(1).type) {
 		case TOK_EOL:
 		case TOK_DOT: {  // qualified name form
@@ -156,116 +307,14 @@ static AST_FuncDef* func_def(Parser self) {
 	RETURN(func);
 }
 
-static int toplevel_item(Parser self, AST_Module* module) {
-	while (TOP().type == TOK_EOL) POP();  // filter empty lines
-
-	bool is_pub = TOP().type == KW_PUB? (POP(), true) : false;
-
-	switch (TOP().type) {
-		case KW_PUB:
-			if (is_pub) SYNTAX_ERROR("Repeated 'pub'");
-			break;
-		case KW_IMPORT: {
-			if (is_pub) SYNTAX_ERROR_NONFATAL("'pub' cannot be applied to import statements");
-			AST_Import* imp = import(self);
-			if (imp && imp->local_name) {
-				if (shgeti(module->scope, imp->local_name->name) >= 0) {
-					SYNTAX_ERROR_FROM_NONFATAL(imp->local_name, "Something named '%s' already exists in this module.", imp->local_name->name);
-				}
-				// arrpush(module->imports, imp);
-				shput(module->scope, imp->local_name->name, imp);
-				return module;
-			}
-			else return 0;
-		} break;
-		case KW_FUNC: {
-			AST_FuncDef* func = func_def(self);
-			if (func) {
-				if (!func->name) {
-					OUTPUT_ERROR(
-						func->start_line, func->start_col + 4,
-						func->start_line, func->start_col + 4,
-						"Error", "This function in module scope does not have a name.");
-					self->error_count++;
-					return 0;
-				}
-				AST_Node* maybe_overload = shget(module->scope, func->name->name);
-				if (maybe_overload) {
-					if (maybe_overload->node_type == NODE_FUNC_OVERLOAD) {
-						arrpush(((AST_FuncOverload*) maybe_overload)->overloads, func);
-					}
-					else {
-						SYNTAX_ERROR_FROM(func->name, "Function definition for '%s' conflicts with something already in scope.", func->name->name);
-					}
-				}
-				else {
-					AST_FuncOverload* overload = node_create(self, NODE_FUNC_OVERLOAD);
-					overload->name = func->name->name;
-					arrpush(overload->overloads, func);
-					shput(module->scope, overload->name, overload);
-				}
-				return 1;
-			}
-			else return 0;
-		} break;
-		case KW_CONST: {
-			POP(); // 'const'
-			if (TOP().type == TOK_LBRACE) {
-				// multiple constants
-				POP(); // '{'
-				EXPECT(TOK_EOL, "Expected end of line to begin const block.");
-				POP(); // EOL
-				while (TOP().type != TOK_RBRACE) {
-					if (TOP().type == TOK_EOL) { // skip empty lines
-						POP();
-						continue;
-					}
-					AST_Const* constant = const_def(self);
-					if (constant) {
-						constant->pub = is_pub;
-						if (shgeti(module->scope, constant->name->name) >= 0) {
-							SYNTAX_ERROR_FROM_NONFATAL(constant->name, "Something named '%s' already exists in this module.", constant->name->name);
-						}
-						shput(module->scope, constant->name->name, constant);
-					}
-					else return 0;
-					EXPECT(TOK_EOL, "Expected end of line after block constant");
-					POP(); // EOL
-				}
-				POP(); // '}'
-				EXPECT(TOK_EOL, "Expected end of line after const block");
-				return 0;
-			}
-			else {
-				AST_Const* constant = const_def(self);
-				if (constant) {
-					constant->pub = is_pub;
-					if (shgeti(module->scope, constant->name->name) >= 0) {
-						SYNTAX_ERROR_FROM_NONFATAL(constant->name, "Something named '%s' already exists in this module.", constant->name->name);
-					}
-					shput(module->scope, constant->name->name, constant);
-				}
-				else return 0;
-				EXPECT(TOK_EOL, "Expected end of line after const");
-				POP();
-				return constant;
-			}
-		} break;
-		// case KW_STRUCT: APPEND_DECL(struct_def);
-		// case KW_TABLE: APPEND_DECL(table_def);
-		case TOK_RPAREN: SYNTAX_ERROR("Unmatched parenthesis");
-		case TOK_RBRACE: SYNTAX_ERROR("Unmatched curly brace");
-		case TOK_RSQUARE: SYNTAX_ERROR("Unmatched square bracket");
-		case TOK_EOL:
-			if (is_pub) {
-				SYNTAX_ERROR("'pub' must by followed by a top-level declaration");
-			}
-			// drop-through is intentional
-		case TOK_EOF:
-			return 1;
-		default:
-			SYNTAX_ERROR("Top level scope cannot begin with '%s'", _token_);
+static AST_Test* test_def(Parser self) {
+	NEW_NODE(test, NODE_TEST);
+	POP();  // 'test'
+	if (TOP().type == TOK_STRING) {
+		APPLY(test->description, string_literal);
 	}
-	POP();
-	return 0;
+	EXPECT(TOK_LBRACE, "Expected test body");
+	APPLY(test->body, block);
+
+	RETURN(test);
 }

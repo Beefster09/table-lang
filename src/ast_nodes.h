@@ -2,6 +2,9 @@
 
 // ... Assumed to be coming from ast.h
 
+
+// atoms
+
 typedef struct NODE_QUALNAME {
 	AST_NODE_COMMON_FIELDS
 	const char* ARRAY parts;
@@ -11,6 +14,37 @@ typedef struct NODE_NAME {
 	AST_NODE_COMMON_FIELDS
 	const char* name;
 } AST_Name;
+
+typedef struct NODE_INT {
+	AST_NODE_COMMON_FIELDS
+	intmax_t value;
+} AST_Int;
+
+typedef struct NODE_FLOAT {
+	AST_NODE_COMMON_FIELDS
+	long double value;
+} AST_Float;
+
+typedef struct NODE_BOOL {
+	AST_NODE_COMMON_FIELDS
+	bool value;
+} AST_Bool;
+
+typedef struct NODE_STRING {
+	AST_NODE_COMMON_FIELDS
+	const char* value;
+} AST_String;
+
+typedef struct NODE_CHAR {
+	AST_NODE_COMMON_FIELDS
+	Rune value;
+} AST_Char;
+
+typedef struct NODE_NULL {
+	AST_NODE_COMMON_FIELDS
+} AST_Null;
+
+// top-level stuff
 
 typedef struct NODE_BLOCK {
 	AST_NODE_COMMON_FIELDS
@@ -23,6 +57,7 @@ typedef struct NODE_IMPORT {
 	AST_Qualname* qualified_name;
 	const char* imported_file;
 	void* module_handle;
+	bool is_using;
 } AST_Import;
 
 typedef struct NODE_PARAM {
@@ -57,36 +92,19 @@ typedef struct NODE_CONST {
 	bool pub;
 } AST_Const;
 
+typedef struct NODE_TEST {
+	AST_NODE_COMMON_FIELDS
+	AST_String* description;
+	AST_Block* body;
+} AST_Test;
+
 typedef struct NODE_MODULE {
 	AST_NODE_COMMON_FIELDS
 	struct { const char* key; AST_Node* value; } MAP scope;
-	// const char* ARRAY exports;
+	AST_Test* ARRAY tests;
 } AST_Module;
 
-typedef struct NODE_INT {
-	AST_NODE_COMMON_FIELDS
-	intmax_t value;
-} AST_Int;
-
-typedef struct NODE_FLOAT {
-	AST_NODE_COMMON_FIELDS
-	long double value;
-} AST_Float;
-
-typedef struct NODE_BOOL {
-	AST_NODE_COMMON_FIELDS
-	bool value;
-} AST_Bool;
-
-typedef struct NODE_STRING {
-	AST_NODE_COMMON_FIELDS
-	const char* value;
-} AST_String;
-
-typedef struct NODE_CHAR {
-	AST_NODE_COMMON_FIELDS
-	Rune value;
-} AST_Char;
+// Expressions
 
 typedef struct NODE_BINOP {
 	AST_NODE_COMMON_FIELDS
@@ -177,6 +195,8 @@ typedef struct NODE_FIELD_ACCESS {
 	AST_Qualname* field;
 } AST_FieldAccess;
 
+// Types
+
 typedef struct NODE_SIMPLE_TYPE {
 	AST_NODE_COMMON_FIELDS
 	AST_Qualname* base;
@@ -218,6 +238,8 @@ typedef struct NODE_UNION {
 	AST_NODE_COMMON_FIELDS
 	AST_Node* ARRAY variants;
 } AST_UnionType;
+
+// Statements
 
 typedef struct NODE_VAR_DECL {
 	AST_NODE_COMMON_FIELDS
@@ -308,3 +330,51 @@ typedef struct NODE_MATCH {
 	AST_NODE_COMMON_FIELDS
 	AST_MatchCase* ARRAY patterns;
 } AST_Match;
+
+typedef struct NODE_CONTEXT {
+	AST_NODE_COMMON_FIELDS
+	AST_Name* name;
+	AST_Node* value;
+} AST_Context;
+
+typedef struct NODE_WITH {
+	AST_NODE_COMMON_FIELDS
+	AST_Context* ARRAY contexts;
+} AST_With;
+
+typedef struct NODE_RETURN {
+	AST_NODE_COMMON_FIELDS
+	AST_Node* value;
+} AST_Return;
+
+typedef struct NODE_BREAK {
+	AST_NODE_COMMON_FIELDS
+	AST_Name* label;
+} AST_Break;
+
+typedef struct NODE_SKIP {
+	AST_NODE_COMMON_FIELDS
+	AST_Name* label;
+} AST_Skip;
+
+typedef struct NODE_FAIL {
+	AST_NODE_COMMON_FIELDS
+	AST_Node* value;
+	AST_Node* message;
+} AST_Fail;
+
+typedef struct NODE_ASSERT {
+	AST_NODE_COMMON_FIELDS
+	AST_Node* value;
+	AST_Node* message;
+} AST_Assert;
+
+typedef struct NODE_DEFER {
+	AST_NODE_COMMON_FIELDS
+	AST_Node* code;
+} AST_Defer;
+
+typedef struct NODE_CANCEL {
+	AST_NODE_COMMON_FIELDS
+	AST_Node* target;
+} AST_Cancel;

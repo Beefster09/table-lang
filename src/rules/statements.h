@@ -3,12 +3,13 @@
 	FINISH(retval); \
 	switch (TOP().type) { \
 		case TOK_EOL: \
-			POP(); \
+			POP(); /* Drop-thru is intentional */ \
 		case TOK_RBRACE: \
 			return retval; \
 		default: \
 			SYNTAX_ERROR("Expected end-of-line or '}' at end of " fmt, ##__VA_ARGS__); \
 	} \
+	return NULL; /* unreachable */ \
 } while (0);
 
 static AST_Node* statement(Parser self) {
@@ -20,6 +21,79 @@ static AST_Node* statement(Parser self) {
 			case KW_IF:    return if_stmt(self);
 			case KW_WHILE: return while_loop(self);
 			case KW_FOR:   return for_loop(self);
+			case KW_WITH:  return with_block(self);
+			case KW_MATCH: return pattern_match(self);
+			case KW_TYPE:
+				if (LOOKAHEAD(1).type == KW_MATCH) {
+					type_match(self);
+				}
+				else return expression(self, 0);
+
+			case KW_RETURN: {
+				NEW_NODE(ret, NODE_RETURN);
+				POP();
+				APPLY(ret->value, expression, 0);
+				END_STMT(ret, "return statement");
+			}
+
+			case KW_FAIL: {
+				NEW_NODE(fail, NODE_FAIL);
+				POP();
+				if (TOP().type != TOK_COLON) {
+					APPLY(fail->value, expression, 0);
+				}
+				if (TOP().type == TOK_COLON) {
+					POP();
+					APPLY(fail->message, expression, 0);
+				}
+				END_STMT(fail, "fail statement");
+			}
+
+			case KW_ASSERT: {
+				NEW_NODE(assert_stmt, NODE_ASSERT);
+				POP();
+				APPLY(assert_stmt->value, expression, 0);
+				if (TOP().type == TOK_COLON) {
+					POP();
+					APPLY(assert_stmt->message, expression, 0);
+				}
+				END_STMT(assert_stmt, "assertion");
+			}
+
+			case KW_DEFER: {
+				if (LOOKAHEAD(1).type == KW_DEFER) SYNTAX_ERROR("Repeated 'defer'");
+				NEW_NODE(defer, NODE_DEFER);
+				POP();
+				APPLY(defer->code, statement);
+				FINISH(defer); // eol already eaten
+				return defer;
+			}
+
+			case KW_CANCEL: {
+				NEW_NODE(cancel, NODE_CANCEL);
+				POP();
+				APPLY(cancel->target, expression, 0);
+				END_STMT(cancel, "cancel statement");
+			}
+
+			case KW_BREAK: {
+				NEW_NODE(brk, NODE_BREAK);
+				POP();
+				if (TOP().type == TOK_IDENT) {
+					APPLY(brk->label, simple_name);
+				}
+				END_STMT(brk, "break statement");
+			}
+
+			case KW_SKIP: {
+				NEW_NODE(skip, NODE_SKIP);
+				POP();
+				if (TOP().type == TOK_IDENT) {
+					APPLY(skip->label, simple_name);
+				}
+				END_STMT(skip, "skip statement");
+			}
+
 			case TOK_LBRACE: return block(self);
 
 			case TOK_IDENT:
@@ -289,4 +363,16 @@ static AST_OpAssign* op_assignment(Parser self, AST_Node* lhs) {
 	CONSUME(TOK_ASSIGN, "Expected '=' in '%s' compound assignment", assign->op);
 	APPLY(assign->src_expr, expression, 0);
 	END_STMT(assign, "'%s' compound assignment", assign->op);
+}
+
+static AST_Node* type_match(Parser self) {
+	SYNTAX_ERROR("Type matching not yet supported");
+}
+
+static AST_Node* pattern_match(Parser self) {
+	SYNTAX_ERROR("Pattern matching not yet supported");
+}
+
+static AST_With* with_block(Parser self) {
+	SYNTAX_ERROR("'with' blocks not yet supported");
 }

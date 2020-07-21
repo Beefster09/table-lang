@@ -63,13 +63,15 @@ static AST_Node* expression(Parser self, int precedence_before) {
 			case TOK_IDENT:
 				if (!sub_expr && LOOKAHEAD(1).type == TOK_ARROW) {
 					APPLY(sub_expr, lambda);
+					break;
 				}
-
+				// drop-thru is intentional
 			case TOK_INT:
 			case TOK_FLOAT:
 			case TOK_BOOL:
 			case TOK_STRING:
 			case TOK_CHAR:
+			case TOK_NULL:
 				if (sub_expr) SYNTAX_ERROR("Unexpected atom in expression");
 				APPLY(sub_expr, atom);
 				break;

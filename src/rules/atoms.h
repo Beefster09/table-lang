@@ -33,6 +33,13 @@ static const char* join_qualname(Parser self, AST_Qualname* qn) {
 	return result;
 }
 
+static AST_Int* null_literal(Parser self) {
+	NEW_NODE(leaf, NODE_NULL);
+	EXPECT(TOK_NULL, "Expected null here");
+	POP();
+	RETURN(leaf);
+}
+
 static AST_Int* int_literal(Parser self) {
 	NEW_NODE(leaf, NODE_INT);
 	EXPECT(TOK_INT, "Expected an integer here");
@@ -91,6 +98,7 @@ static AST_String* string_literal(Parser self) {
 
 static AST_Node* atom(Parser self) {
 	switch (TOP().type) {
+		case TOK_NULL: return null_literal(self);
 		case TOK_INT: return int_literal(self);
 		case TOK_FLOAT: return float_literal(self);
 		case TOK_BOOL: return bool_literal(self);

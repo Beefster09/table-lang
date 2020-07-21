@@ -80,11 +80,9 @@ static AST_Node* node_create(Parser self, NodeType type) {
 #pragma GCC diagnostic ignored "-Wincompatible-pointer-types"
 #pragma GCC diagnostic ignored "-Wunused-value"
 
-// #pragma GCC diagnostic push
 #define TOP() (*lexer_peek_token(self->lex, 0))
 #define LOOKAHEAD(n) (*lexer_peek_token(self->lex, n))
 #define POP() (*lexer_pop_token(self->lex))
-// #pragma GCC diagnostic pop
 
 #define NEW_NODE(N, T) \
 	struct T* N = node_create(self, T); \

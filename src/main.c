@@ -28,7 +28,7 @@ int main(int argc, char *argv[]) {
 		AST_Node* root = parser_execute(parser);
 		if (root) {
 			color_fprintf(stderr, TERM_FG_GREEN, "Parsing success!\n");
-			print_ast(stderr, root);
+			print_ast(stdout, root);
 		}
 		else {
 			color_fprintf(stderr, TERM_FG_RED, "Parsing failed.\n");

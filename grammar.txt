@@ -10,6 +10,7 @@ top_level_stmt:
     | table_def
     | func_def
     | test_def
+    | macro_def
     | top_level_directive
 
 import: "import" (identifier "=")? (qualname | string) EOL
@@ -19,13 +20,14 @@ const_def:
     | "pub"? "const" "{" const_def_line+ "}"
 const_def_line: identifier (":" type?) "=" expression EOL
 
-type_alias: "pub"? "type" identifer ":" type EOL
+type_alias: "pub"? "type" identifer (":" | "=") type EOL
 
 struct_def: "pub"? "struct" identifier ("(" param_list ")")? "{" field* "}" EOL
 
 table_def: "pub"? "table" ("[" expression "]")? identifier (":" (qualname | "*"))? "{" field* "}" EOL
 
 field: "pub"? identifier ":" type ("=" expression)? EOL
+    | "#alias" identifier "=" identifier EOL  // struct and fields only - offers alternate spellings
 
 param_list:
       param ("," param)* ","?
@@ -36,7 +38,9 @@ param:
 
 func_def: "pub"? "func" (identifier | operator) "(" param_list? ")" (":" type)? "{" statement* "}" EOL
 
-test_def: "test" string_literal "{" statement* "}"
+test_def: "test" string_literal* "{" statement* "}" EOL
+
+macro_def: "macro" identifer ("(" param_list? ")")? ("=" expression | "{" statement* "}") EOL
 
 statement:
       declaration
@@ -72,7 +76,7 @@ func_stmt: "func" identifier "(" param_list? ")" (":" type)? "{" statement* "}" 
 
 return_stmt: "return" expression EOL
 yield_stmt: "yield" expression EOL
-fail_stmt: "fail" qualname? string_literal? EOL
+fail_stmt: "fail" expression? (":" string_literal)? EOL
 assert_stmt: "assert" expression (":" string_literal)? EOL
 cancel_stmt: "cancel" expression EOL
 
@@ -97,15 +101,15 @@ loop_label:
 match_stmt:
     "type" "match" expression "{" EOL type_case+ "}" EOL  // expression must be of type Any or some union
     | "match" expression "{" EOL pattern_case+ "}" EOL
-type_case: type "{" statement* "}" EOL
-pattern_case: (pattern ("," pattern)* | "else") "{" statement* "}" EOL
+type_case: type ":" ("{" statement* "}" | expression) EOL
+pattern_case: (pattern ("," pattern)* | "else") ":" ("{" statement* "}" | expression) EOL
 pattern:
-    expression (".." expression)?
+    expression (".." expression)?  // must evaluate to constants at compile time
 
 with_block: "with" context (";" context)* "{" statement* "}" EOL
 context:
-    (identifier "=")? expression  // basically Python's with ... as ...
-    "context" "(" (identifier "=" expression \ ",")+ ")"
+    (identifier ":" "=")? expression  // basically Python's with ... as ...
+    identifier "=" expression  // for setting allocators, executors, etc...
 
 tag_directive: /#\w+/ EOL* statement
 

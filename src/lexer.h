@@ -20,6 +20,7 @@ typedef struct Token {
 		TOK_STRING    = 5,
 		TOK_CHAR      = 6,
 		TOK_BOOL      = 7,
+		TOK_NULL      = 8,
 
 		TOK_BACKSLASH = '\\',
 		TOK_AT        = '@',

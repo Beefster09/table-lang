@@ -5,6 +5,7 @@ table
 const
 type
 func
+test
 assert
 return
 yield
@@ -23,8 +24,9 @@ while
 break
 skip
 with
+using
+alias
 undefined
 and
 or
 not
-null

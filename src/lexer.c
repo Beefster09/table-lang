@@ -603,6 +603,10 @@ static Token* lexer_emit_token(Lexer self) {
 					current->kw_value = kw;
 					EMIT(/* TOK_KEYWORD | */ kw);
 				}
+				else if (strcmp(current->literal_text, "null") == 0) {
+					current->int_value = 0;
+					EMIT(TOK_NULL);
+				}
 				else if (strcmp(current->literal_text, "true") == 0) {
 					current->bool_value = true;
 					EMIT(TOK_BOOL);
