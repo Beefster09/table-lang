@@ -17,6 +17,8 @@
 #define STDIN_SIZE_GUESS (64 * 1024)  // 64 KiB
 #define ASCII_MAX 127
 
+#pragma GCC diagnostic ignored "-Wpointer-sign"
+
 static void* arena_alloc__noabc(void** arena, size_t size) {
 	void* result = *arena;
 	*arena = ((char*) *arena) + size;
@@ -66,8 +68,8 @@ Lexer lexer_create(const char* filename) {
 	arraddn(self->token_buf, BASE_LOOKAHEAD_MAX);
 	self->src = src;
 	self->next_literal = self->arena_block = malloc(src_size * 5 + 1);
-	self->string_buffer = ((char*) self->arena_block) + src_size * 2;
-	self->line_buffer = ((char*) self->arena_block) + src_size * 4; // size = src_size + 1 byte (for the null at the end)
+	self->string_buffer = ((unsigned char*) self->arena_block) + src_size * 2;
+	self->line_buffer = ((unsigned char*) self->arena_block) + src_size * 4; // size = src_size + 1 byte (for the null at the end)
 	self->line_length = -1;
 	self->line_no = 1;
 	self->column = 1;
@@ -80,7 +82,7 @@ void lexer_destroy(Lexer self) {
 	free(self);
 }
 
-const char** lexer_get_lines(Lexer self, int* len) {
+const unsigned char** lexer_get_lines(Lexer self, int* len) {
 	if (len) *len = arrlen(self->lines);
 	return self->lines;
 }
@@ -227,15 +229,23 @@ static Token* lexer_emit_token(Lexer self) {
 				case '\\':  // Comment
 					if (lexer_fwd_line(self)) EMIT(TOK_EOF);
 					goto emit_eol;
+
 				case '"':  // Raw String
 					raw_string = true;
 					goto handle_string;
-				case '\n':
-					self->line_no++;
-					self->column = 1;
-					goto reset;
+
 				default: // Just a backslash
+					if (cur_ch > ASCII_MAX) UTF8();
+					while (iswspace(cur_ch)) {  // but maybe there's some whitespace after it...
+						if (cur_ch == '\n') {  // and a newline
+							self->line_no++;
+							self->column = 1;
+							goto reset;
+						}
+						FWD_UTF8();
+					}
 					BACK();
+					current->end_col = current->start_col;
 					EMIT(TOK_BACKSLASH);
 			}
 		case '.':

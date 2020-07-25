@@ -1,9 +1,8 @@
 
 
-#define POINTER_PRECEDENCE 100
-#define ARRAY_PRECEDENCE    50
-#define UNION_PRECEDENCE    20
-#define FUNCTYPE_PRECEDENCE 15
+#define MODIFIER_PRECEDENCE 100
+#define UNION_PRECEDENCE     20
+#define FUNCTYPE_PRECEDENCE  15
 
 #define FUNC_TYPE_RHS() do { \
 	POP();  /* '=>' */ \
@@ -25,34 +24,95 @@
 			APPLY(func->return_type, type, FUNCTYPE_PRECEDENCE); \
 			break; \
 	} \
-} while(0)
+} while (0)
 
 static AST_Node* type(Parser self, int precedence_before) {
-	AST_Node* sub_type = 0;
+	AST_Node* sub_type = NULL;
 	while (1) {
 		switch(TOP().type) {
 			case TOK_IDENT:
 				if (sub_type) SYNTAX_ERROR("Unexpected identifier in type");
 				else {
-					APPLY(sub_type, simple_type);
+					NEW_NODE(simple, NODE_SIMPLE_TYPE);
+					APPLY(simple->base, qualname);
+					FINISH(simple);
+					sub_type = simple;
+				}
+				break;
+
+			case KW_MUT:
+			case TOK_BANG:
+				if (sub_type) SYNTAX_ERROR("Mutable modifier must precede a type");
+				else {
+					NEW_NODE(mut, NODE_MUTABLE_TYPE);
+					unsigned int line = TOP().start_line;
+					unsigned int sc = TOP().start_col;
+					unsigned int ec = TOP().end_col;
+					POP();
+					APPLY(mut->base, type, MODIFIER_PRECEDENCE);
+					FINISH(mut);
+					if (mut->base->node_type == NODE_MUTABLE_TYPE
+						|| mut->base->node_type == NODE_OPTIONAL_TYPE
+						&& ((AST_OptionalType*) mut->base)->base->node_type == NODE_MUTABLE_TYPE) {
+						OUTPUT_ERROR(line, sc, line, ec, "Syntax warning", "Redundant mutable modifier");
+						self->warning_count++;
+						sub_type = mut->base;
+					}
+					else {
+						sub_type = mut;
+					}
+				}
+				break;
+
+			case KW_OPT:
+			case TOK_QMARK:
+				if (sub_type) SYNTAX_ERROR("Optional modifier must precede a type");
+				else {
+					NEW_NODE(opt, NODE_OPTIONAL_TYPE);
+					unsigned int line = TOP().start_line;
+					unsigned int sc = TOP().start_col;
+					unsigned int ec = TOP().end_col;
+					POP();
+					APPLY(opt->base, type, MODIFIER_PRECEDENCE);
+					FINISH(opt);
+					if (opt->base->node_type == NODE_OPTIONAL_TYPE
+						|| opt->base->node_type == NODE_MUTABLE_TYPE
+						&& ((AST_MutableType*) opt->base)->base->node_type == NODE_OPTIONAL_TYPE) {
+						OUTPUT_ERROR(line, sc, line, ec, "Syntax warning", "Redundant optional modifier");
+						self->warning_count++;
+						sub_type = opt->base;
+					}
+					else if (opt->base->node_type == NODE_MUTABLE_TYPE) {
+						// Enforce canonical order of !? by swapping the nodes
+						AST_MutableType* mut = opt->base;
+						opt->base = mut->base;
+						mut->base = opt;
+						sub_type = mut;
+					}
+					else {
+						sub_type = opt;
+					}
 				}
 				break;
 
 			case TOK_AT:
 				if (sub_type) SYNTAX_ERROR("Pointer designations must precdede a type");
 				else {
-					POP();  // '@'
-					APPLY(sub_type, pointer_type);
+					NEW_NODE(pointer, NODE_POINTER_TYPE);
+					POP();
+					APPLY(pointer->base, type, MODIFIER_PRECEDENCE);
+					FINISH(pointer);
+					sub_type = pointer;
 				}
 				break;
 
 			case TOK_LSQUARE:
 				// Maybe this should be a prefix for types?
-				if (!sub_type) SYNTAX_ERROR("Array types require an element type to the left");
-				else if (ARRAY_PRECEDENCE > precedence_before) {
-					APPLY(sub_type, array_type, sub_type);
+				if (sub_type) SYNTAX_ERROR("Array brackets should precede the element type");
+				else {
+					APPLY(sub_type, array_type);
+					FINISH(sub_type);
 				}
-				else return sub_type;
 				break;
 
 			case TOK_BAR:
@@ -102,7 +162,7 @@ static AST_Node* type(Parser self, int precedence_before) {
 				}
 				else {
 					POP();  // '('
-					APPLY(sub_type, type, precedence_before & 1);
+					APPLY(sub_type, type, 0);
 					if (TOP().type == TOK_COMMA) {
 						// Oh boy! We have a function type!
 						NEW_NODE_FROM(func, NODE_FUNC_TYPE, sub_type);
@@ -116,12 +176,13 @@ static AST_Node* type(Parser self, int precedence_before) {
 						EXPECT(TOK_ARROW, "Expected function arrow here");
 						FUNC_TYPE_RHS();
 						sub_type = func;
+						FINISH(sub_type);
 					}
 					else {
 						EXPECT(TOK_RPAREN, "Expected matching parenthesis here");
 						POP();  // ')'
+						FINISH(sub_type);
 					}
-					FINISH(sub_type);
 				}
 				break;
 
@@ -134,54 +195,8 @@ static AST_Node* type(Parser self, int precedence_before) {
 
 #undef FUNC_TYPE_RHS
 
-static AST_SimpleType* simple_type(Parser self) {
-	NEW_NODE(simple, NODE_SIMPLE_TYPE);
-	APPLY(simple->base, qualname);
-	while (1) {
-		switch (TOP().type) {
-			case TOK_QMARK:
-				if (simple->is_nullable) SYNTAX_WARNING("Duplicated '?'");
-				POP();
-				simple->is_nullable = true;
-				break;
-			case TOK_BANG:
-				if (simple->is_mutable) SYNTAX_WARNING("Duplicated '!'");
-				POP();
-				simple->is_mutable = true;
-				break;
-			case TOK_EOL:
-				// drop through is intentional
-			default: RETURN(simple);
-		}
-	}
-}
-
-static AST_PointerType* pointer_type(Parser self) {
-	NEW_NODE(pointer, NODE_POINTER_TYPE);
-	while (1) {
-		switch (TOP().type) {
-			case TOK_QMARK:
-				if (pointer->is_nullable) SYNTAX_WARNING("Duplicated '?'");
-				POP();
-				pointer->is_nullable = true;
-				break;
-			case TOK_BANG:
-				if (pointer->is_mutable) SYNTAX_WARNING("Duplicated '!'");
-				POP();
-				pointer->is_mutable = true;
-				break;
-			case TOK_EOL:
-				RETURN(pointer);
-			default:
-				APPLY(pointer->base, type, POINTER_PRECEDENCE);
-				RETURN(pointer);
-		}
-	}
-}
-
-static AST_ArrayType* array_type(Parser self, AST_Node* element_type) {
-	NEW_NODE_FROM(array, NODE_ARRAY_TYPE, element_type);
-	array->element_type = element_type;
+static AST_ArrayType* array_type(Parser self) {
+	NEW_NODE(array, NODE_ARRAY_TYPE);
 
 	POP();  // '['
 
@@ -223,21 +238,6 @@ static AST_ArrayType* array_type(Parser self, AST_Node* element_type) {
 	EXPECT(TOK_RSQUARE, "Expected right square bracket to end array dimensions");
 	POP();  // ']'
 
-	while (1) {
-		switch (TOP().type) {
-			case TOK_QMARK:
-				if (array->is_nullable) SYNTAX_WARNING("Duplicated '?'");
-				POP();
-				array->is_nullable = true;
-				break;
-			case TOK_BANG:
-				if (array->is_mutable) SYNTAX_WARNING("Duplicated '!'");
-				POP();
-				array->is_mutable = true;
-				break;
-			case TOK_EOL:
-				// drop through is intentional
-			default: RETURN(array);
-		}
-	}
+	APPLY(array->element_type, type, MODIFIER_PRECEDENCE);
+	return array;
 }

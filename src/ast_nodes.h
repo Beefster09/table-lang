@@ -78,10 +78,18 @@ typedef struct NODE_FUNC_DEF {
 	bool pub;
 } AST_FuncDef;
 
+typedef struct NODE_MACRO {
+	AST_NODE_COMMON_FIELDS
+	AST_Name* name;
+	struct { const char* key; AST_Param* value; } MAP params;
+	AST_Node* expansion;
+	bool pub;
+} AST_Macro;
+
 typedef struct NODE_FUNC_OVERLOAD {
 	AST_NODE_COMMON_FIELDS
-	const char* name;
-	AST_FuncDef* ARRAY overloads;
+	AST_Name* name;
+	AST_Name* ARRAY overloads;
 } AST_FuncOverload;
 
 typedef struct NODE_CONST {
@@ -200,16 +208,22 @@ typedef struct NODE_FIELD_ACCESS {
 typedef struct NODE_SIMPLE_TYPE {
 	AST_NODE_COMMON_FIELDS
 	AST_Qualname* base;
-	bool is_nullable;
-	bool is_mutable;
 } AST_SimpleType;
 
 typedef struct NODE_POINTER_TYPE {
 	AST_NODE_COMMON_FIELDS
 	AST_Node* base;
-	bool is_nullable;
-	bool is_mutable;
 } AST_PointerType;
+
+typedef struct NODE_MUTABLE_TYPE {
+	AST_NODE_COMMON_FIELDS
+	AST_Node* base;
+} AST_MutableType;
+
+typedef struct NODE_OPTIONAL_TYPE {
+	AST_NODE_COMMON_FIELDS
+	AST_Node* base;
+} AST_OptionalType;
 
 typedef struct NODE_ARRAY_TYPE {
 	AST_NODE_COMMON_FIELDS
@@ -219,8 +233,6 @@ typedef struct NODE_ARRAY_TYPE {
 	// shape is empty or null & !is_dynamic = fixed shape of any dimensionality determined at runtime
 	// null value in slot = fixed size determined at runtime
 	bool is_dynamic;
-	bool is_mutable;
-	bool is_nullable;
 } AST_ArrayType;
 
 typedef struct NODE_FUNC_TYPE {

@@ -1,5 +1,15 @@
 // To be included *only* from parser.c
 
+#define ADD_DECL(K, V) do { \
+	if ((K)->name[0] == '_' && ((K)->name[1] == '_' || (K)->name[1] == 0)) { \
+		SYNTAX_ERROR_FROM(K, "'%s' is a reserved identifier", (K)->name); \
+	} \
+	else if (shgeti(module->scope, (K)->name) >= 0) { \
+		SYNTAX_ERROR_FROM(K, "Something named '%s' already exists in this module.", (K)->name); \
+	} \
+	shput(module->scope, (K)->name, V); \
+} while (0)
+
 static int toplevel_item(Parser self, AST_Module* module) {
 	while (TOP().type == TOK_EOL) POP();  // filter empty lines
 
@@ -8,27 +18,25 @@ static int toplevel_item(Parser self, AST_Module* module) {
 	switch (TOP().type) {
 		case KW_PUB:
 			if (is_pub) SYNTAX_ERROR("Repeated 'pub'");
-			break;
+			else SYNTAX_ERROR("Unexpected 'pub'");
+
 		case KW_IMPORT: {
 			if (is_pub) SYNTAX_ERROR_NONFATAL("'pub' cannot be applied to import statements");
 			AST_Import* imp = import(self);
 			if (imp) {
 				if (imp->local_name) {
-					if (shgeti(module->scope, imp->local_name->name) >= 0) {
-						SYNTAX_ERROR_FROM_NONFATAL(imp->local_name, "Something named '%s' already exists in this module.", imp->local_name->name);
-					}
-					// arrpush(module->imports, imp);
-					shput(module->scope, imp->local_name->name, imp);
-					return module;
+					ADD_DECL(imp->local_name, imp);
+					return 1;
 				}
 				else if (imp->is_using) {
 					char namebuf[32];
-					snprintf(namebuf, sizeof(namebuf), ".import_%d", shlen(module->scope));
+					snprintf(namebuf, sizeof(namebuf), "?import_%d", shlen(module->scope));
 					shput(module->scope, namebuf, imp);
 				}
 			}
 			else return 0;
 		} break;
+
 		case KW_FUNC: {
 			AST_FuncDef* func = func_def(self);
 			if (func) {
@@ -40,26 +48,13 @@ static int toplevel_item(Parser self, AST_Module* module) {
 					self->error_count++;
 					return 0;
 				}
-				AST_Node* maybe_overload = shget(module->scope, func->name->name);
-				if (maybe_overload) {
-					if (maybe_overload->node_type == NODE_FUNC_OVERLOAD) {
-						arrpush(((AST_FuncOverload*) maybe_overload)->overloads, func);
-					}
-					else {
-						SYNTAX_ERROR_FROM(func->name, "Function definition for '%s' conflicts with something already in scope.", func->name->name);
-					}
-				}
-				else {
-					AST_FuncOverload* overload = node_create(self, NODE_FUNC_OVERLOAD);
-					overload->name = func->name->name;
-					arrpush(overload->overloads, func);
-					shput(module->scope, overload->name, overload);
-				}
+				ADD_DECL(func->name, func);
 				CONSUME(TOK_EOL, "Expected end-of-line after function definition");
 				return 1;
 			}
 			else return 0;
 		} break;
+
 		case KW_CONST: {
 			POP(); // 'const'
 			if (TOP().type == TOK_LBRACE) {
@@ -75,10 +70,7 @@ static int toplevel_item(Parser self, AST_Module* module) {
 					AST_Const* constant = const_def(self);
 					if (constant) {
 						constant->pub = is_pub;
-						if (shgeti(module->scope, constant->name->name) >= 0) {
-							SYNTAX_ERROR_FROM_NONFATAL(constant->name, "Something named '%s' already exists in this module.", constant->name->name);
-						}
-						shput(module->scope, constant->name->name, constant);
+						ADD_DECL(constant->name, constant);
 					}
 					else return 0;
 					EXPECT(TOK_EOL, "Expected end of line after block constant");
@@ -92,10 +84,7 @@ static int toplevel_item(Parser self, AST_Module* module) {
 				AST_Const* constant = const_def(self);
 				if (constant) {
 					constant->pub = is_pub;
-					if (shgeti(module->scope, constant->name->name) >= 0) {
-						SYNTAX_ERROR_FROM_NONFATAL(constant->name, "Something named '%s' already exists in this module.", constant->name->name);
-					}
-					shput(module->scope, constant->name->name, constant);
+					ADD_DECL(constant->name, constant);
 				}
 				else return 0;
 				EXPECT(TOK_EOL, "Expected end of line after const");
@@ -103,6 +92,7 @@ static int toplevel_item(Parser self, AST_Module* module) {
 				return 1;
 			}
 		} break;
+
 		case KW_TEST: {
 			AST_Test* test = test_def(self);
 			if (test) {
@@ -112,8 +102,59 @@ static int toplevel_item(Parser self, AST_Module* module) {
 			}
 			else return 0;
 		} break;
+
 		// case KW_STRUCT: APPEND_DECL(struct_def);
 		// case KW_TABLE: APPEND_DECL(table_def);
+
+		case TOK_DIRECTIVE:
+			if (strcmp(TOP().str_value, "overload") == 0) {  // TODO: move this logic to the lexer
+				NEW_NODE(overload, NODE_FUNC_OVERLOAD);
+				POP();  // '#overload'
+				switch (TOP().type) {
+					case TOK_IDENT:
+					case TOK_PLUS:
+					case TOK_MINUS:
+					case TOK_STAR:
+					case TOK_SLASH:
+					case TOK_TILDE:
+					case TOK_PERCENT:
+					case TOK_CARET:
+					case TOK_AMP:
+					case TOK_BAR:
+					case TOK_EQ:
+					case TOK_NE:
+					case TOK_LT:
+					case TOK_LE:
+					case TOK_GT:
+					case TOK_GE:
+					case TOK_CUSTOM_OPERATOR:
+						APPLY(overload->name, simple_name);
+						break;
+					default:
+						SYNTAX_ERROR("Expected an identifier or operator to name the overload");
+				}
+				while (TOP().type == TOK_EOL) POP();  // support multiple brace styles
+				CONSUME(TOK_LBRACE, "Expected '{' to start overload list");
+				while (TOP().type != TOK_RBRACE) {
+					switch (TOP().type) {
+						case TOK_IDENT:
+							APPEND(overload->overloads, simple_name);
+							EXPECT(TOK_EOL, "Expected end of line after named overload");
+							// intentional drop-thru
+						case TOK_EOL:
+							POP();
+							break;
+						default:
+							SYNTAX_ERROR("Unexpected '%s' in overload list", _token_);
+					}
+				}
+				POP();  // '}'
+				FINISH(overload);
+				ADD_DECL(overload->name, overload);
+				break;
+			}
+			else SYNTAX_ERROR("Directive '%s' is not valid here.", _token_);
+
 		case TOK_RPAREN: SYNTAX_ERROR("Unmatched parenthesis");
 		case TOK_RBRACE: SYNTAX_ERROR("Unmatched curly brace");
 		case TOK_RSQUARE: SYNTAX_ERROR("Unmatched square bracket");
@@ -126,9 +167,10 @@ static int toplevel_item(Parser self, AST_Module* module) {
 			return 1;
 		default:
 			SYNTAX_ERROR("Top level scope cannot begin with '%s'", _token_);
+			return 0;
 	}
 	CONSUME(TOK_EOL, "Expected end-of-line after top-level declaration");
-	return 0;
+	return 1;
 }
 
 static AST_Const* const_def(Parser self) {
@@ -231,22 +273,6 @@ static AST_FuncDef* func_def(Parser self) {
 	POP();  // 'func'
 	switch (TOP().type) {
 		case TOK_IDENT:
-		case TOK_PLUS:
-		case TOK_MINUS:
-		case TOK_STAR:
-		case TOK_SLASH:
-		case TOK_TILDE:
-		case TOK_PERCENT:
-		case TOK_CARET:
-		case TOK_AMP:
-		case TOK_BAR:
-		case TOK_EQ:
-		case TOK_NE:
-		case TOK_LT:
-		case TOK_LE:
-		case TOK_GT:
-		case TOK_GE:
-		case TOK_CUSTOM_OPERATOR:
 			APPLY(func->name, simple_name);
 			break;
 		case TOK_LPAREN:

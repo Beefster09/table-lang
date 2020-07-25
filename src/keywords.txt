@@ -1,9 +1,12 @@
 import
 pub
 struct
+enum
 table
 const
 type
+mut
+opt
 func
 test
 assert

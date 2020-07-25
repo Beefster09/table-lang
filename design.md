@@ -134,6 +134,7 @@ foo := 1..10 ; map(x => x * x + 1) ; filter(math.isprime)  \\ foo is [2, 5, 17, 
         * `.lo`, `.hi`, `.even`, `.odd`
 * `String` (not avaialable in GPU blocks)
 * `Rune` - single codepoint of a string (also not in GPU blocks)
+* `RawPtr` - Raw pointer to a block of memory. Silently casts to and from any pointer type.
 
 Built-in types are available with various spellings, e.g.
 
@@ -171,43 +172,95 @@ Arrays can be arbitrary-dimensional
 Arrays can be sized at compile time or runtime, but only 1D arrays can be resized after being created.
 
 ```
-resizable: Int[]
-matrix: Float[3, 4]    \\ 3 x 4 array (static)
-eight_dims: Float[:8]  \\ 8-dimensional array (fixed, but size determined at runtime)
-who_knows: Float[*]    \\ any-dimensional array
+resizable: [] Int       \\ Dynamically resizeable
+matrix: [3, 4] Float    \\ 3 x 4 array (static)
+eight_dims: [:8] Float  \\ 8-dimensional array (fixed, but size determined at runtime)
+who_knows: [...] Float  \\ any-dimensional array
 ```
 
 Arrays support broadcasting of functions and operators with scalars. (similar to numpy, but more explicit)
 
 ```
-foo : Int![] = [1, 2, 3, 4]
-print(foo[*] ^ 2)  \\ -> [1, 4, 9, 16]
-print(8 * foo[*])  \\ -> [8, 16, 24, 32]
-print(sqrt(foo[*])) \\ -> [1.0, 1.414213, 1.732050, 2.0]
+foo : []!Int = [1, 2, 3, 4]
+print(foo[] ^ 2)  \\ -> [1, 4, 9, 16]
+print(8 * foo[])  \\ -> [8, 16, 24, 32]
+print(sqrt(foo[])) \\ -> [1.0, 1.414213, 1.732050, 2.0]
 ```
 
 Broadcasted op-assignments are only legal if the result of the operator returns the same type as the
 array's contained type.
 
 ```
-foo[*] += 4
+foo[] += 4
 print(foo)  \\ -> [5, 6, 7, 8]
-foo[*] *= math.PI  \\ type mismatch error!
+foo[] *= math.PI  \\ type mismatch error!
 ```
 
 Whole expressions are lumped together, so
 
 ```
-arr[*] * 5 + 11
+arr[] * 5 + 11
+print(arr[])
 ```
 
 is roughly equivalent to
 
 ```
 [element * 5 + 11 for element in arr]
+for arr {
+    print(it)
+}
 ```
 
 except that it preserves array shape rather than flattening it (as would happen with an array comprehension)
+
+Multi-dimensional arrays can be transposed easily:
+
+```
+foo : [3, 4, 5]Float = whatever()
+foo\[1, 0, 2]  \\ => [4, 3, 5]Float
+```
+
+You can also extract slices and dimensional cross-sections:
+```
+foo : [30, 40, 50]Float = whatever()
+foo[*, 23, *]  \\ => A [30, 50]Float cross section at y = 23
+foo[24, 31, 10..<30]  \\ => A [20]Float slice along z at 24, 31
+foo[2..16 :2, *, :5]  \\ => A [8, 40, 10] slice along x and z, with stride=2 along x, stride=5 along z
+```
+
+### Internal Representation
+
+For dynamic arrays:
+
+```
+struct DynamicArray(T: Type) {
+    data: @T
+    length: Int
+    capacity: Int
+}
+```
+
+For multidimensional arrays and slices of dynamic arrays, roughly:
+
+```
+struct ArraySlice(T: Type, dimensions: Int) {
+    #constraint dimensions >= 1
+    data: @T
+    flags: #flag enum {
+        FULL_ARRAY
+        WRAPS_DYNAMIC
+    }
+    shape: [dimensions] struct {
+        length: Int
+        stride: Int
+    }
+}
+```
+
+This makes slicing and transposing arrays very cheap by simply using different values in a new struct
+
+Flag and shape data is omitted at runtime  for slices with compile-time known size
 
 ## Mutability
 

@@ -4,6 +4,8 @@
 #include <wchar.h>
 
 #include "keywords.gen.h"
+// #include "directives.gen.h"
+typedef int Directive;
 
 typedef struct _lex_state* Lexer;
 
@@ -11,16 +13,15 @@ typedef struct Token {
 	enum {
 		TOK_EMPTY = 0,
 
-		TOK_KEYWORD = 0x100,
-			// Also includes keywords
+		TOK_KEYWORD   = 0x100,   // Also includes keywords
+		TOK_DIRECTIVE = 0x10000, // Also includes pre-checked directives
 		TOK_IDENT     = 1,
-		TOK_DIRECTIVE = 2,
-		TOK_INT       = 3,
-		TOK_FLOAT     = 4,
-		TOK_STRING    = 5,
-		TOK_CHAR      = 6,
-		TOK_BOOL      = 7,
-		TOK_NULL      = 8,
+		TOK_INT       = 2,
+		TOK_FLOAT     = 3,
+		TOK_STRING    = 4,
+		TOK_CHAR      = 5,
+		TOK_BOOL      = 6,
+		TOK_NULL      = 7,
 
 		TOK_BACKSLASH = '\\',
 		TOK_AT        = '@',
@@ -67,14 +68,15 @@ typedef struct Token {
 		TOK_ERROR = -1
 	} type;
 	unsigned int start_line, start_col, end_line, end_col;
-	const char* literal_text;
+	const unsigned char* literal_text;
 	union {
-		const char* str_value;
+		const unsigned char* str_value;
 		intmax_t int_value;
 		long double float_value;
 		bool bool_value;
 		int32_t char_value;
 		Keyword kw_value;
+		Directive dir_value;
 	};
 } Token;
 
@@ -85,7 +87,7 @@ void lexer_destroy(Lexer);
 void* lexer_get_arena(Lexer);
 
 /// Returns the array of lines in the file.
-const char** lexer_get_lines(Lexer, int* len);
+const unsigned char** lexer_get_lines(Lexer, int* len);
 
 const Token* lexer_peek_token(Lexer, int offset);
 const Token* lexer_pop_token(Lexer);
