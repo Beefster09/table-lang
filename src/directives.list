@@ -1,0 +1,38 @@
+[anywhere]
+if
+elif
+else
+assert
+default (qualname) (func_call)
+
+[toplevel]
+macro    ...
+test     (string_literal) (block)
+overload ...
+run      (statement)
+inline   :tagnext func
+noinline :tagnext func
+flag     :tagnext enum
+
+[field]
+invariant  (expression, 0)
+
+[struct]
+constraint (expression, 0)
+
+[table]
+
+[enum]
+
+[statement]
+assume (expression, 0)
+pre    (expression, 0)
+post   (expression, 0)
+patch  (qualname) "=" (expression, 0)
+for    ...
+yield  (statement)
+
+[expression]
+id     (expression, 0)  \\ string
+eval
+read   (string_literal)

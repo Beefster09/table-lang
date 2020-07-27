@@ -5,7 +5,15 @@ import os.path
 
 keywords_txt = os.path.join(os.path.dirname(__file__), 'keywords.txt')
 
-keywords = list(line.strip() for line in open(keywords_txt))
+keywords = [line.strip() for line in open(keywords_txt)]
+
+directives_list = os.path.join(os.path.dirname(__file__), 'directives.list')
+
+directives = [
+    line.strip().split()[0]
+    for line in open(directives_list)
+    if line[0].isalpha()
+]
 
 print("#pragma once")
 
@@ -17,3 +25,13 @@ print("} Keyword;")
 
 print("Keyword str_to_kw(const char* str);")
 print("const char* kw_to_str(Keyword kw);")
+
+print("typedef enum {")
+print("    DIR_NONE = 0,")
+print("    DIR_UNKNOWN = 0x10000,")
+for i, d in enumerate(directives, 0x10001):
+    print(f"\tDIR_{d.upper()} = 0x{i:x},")
+print("} Directive;")
+
+print("Directive str_to_dir(const char* str);")
+print("const char* dir_to_str(Directive kw);")

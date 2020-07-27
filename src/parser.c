@@ -17,6 +17,7 @@ bool RULE_DEBUG = 1;
 
 struct _parse_state {
 	const char* src;
+	const char* filename;
 	Lexer lex;
 	void** arenas;
 	void* arena_current;
@@ -33,6 +34,7 @@ Parser parser_create(const char* filename) {
 		return 0;
 	}
 	Parser self = calloc(1, sizeof(struct _parse_state));
+	self->filename = filename;
 	self->src = src;
 	self->lex = lex;
 	return self;

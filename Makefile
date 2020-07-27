@@ -26,7 +26,7 @@ build/%.o: src/%.c
 generated/%.gen.h: src/%.gen | generated
 	$< > $@
 
-$(wildcard generated/keywords*.gen.h): src/keywords.txt
+$(wildcard generated/keywords*.gen.h): src/keywords.txt src/directives.list
 $(wildcard generated/ast_*.gen.h): src/ast_nodes.h
 generated/rule_prototypes.gen.h: $(wildcard src/rules/*.h)
 

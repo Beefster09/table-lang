@@ -250,12 +250,15 @@ static Token* lexer_emit_token(Lexer self) {
 			}
 		case '.':
 			if (FWD() == '.') {
-				if (FWD() == '.') {
-					EMIT(TOK_ELLIPSIS);
-				}
-				else {
-					BACK();
-					EMIT(TOK_RANGE);
+				switch (FWD()) {
+					case '.': EMIT(TOK_ELLIPSIS);
+					case '<':
+						current->is_inclusive = false;
+						EMIT(TOK_RANGE);
+					default:
+						BACK();
+						current->is_inclusive = true;
+						EMIT(TOK_RANGE);
 				}
 			}
 			else {
@@ -361,20 +364,12 @@ static Token* lexer_emit_token(Lexer self) {
 							else goto handle_int;
 						}
 					case '.': // float
-						switch (PEEK(0)) {
-							case '0':
-							case '1': case '2': case '3':
-							case '4': case '5': case '6':
-							case '7': case '8': case '9':
-							case ' ': case '\t': case '\n': case '\r':
-								break;
-							default:
-								goto just_zero;
+						if (PEEK(0) != '.') {
+							*digit++ = cur_ch;
+							goto handle_float;
 						}
-						*digit++ = cur_ch;
-						goto handle_float;
-
-					default: just_zero:
+						// else drop thru
+					default:
 						current->int_value = 0;
 						BACK();
 						EMIT(TOK_INT);
@@ -396,13 +391,8 @@ static Token* lexer_emit_token(Lexer self) {
 				FWD();
 				if (cur_ch == '_') continue;
 				else if (cur_ch == '.') {
-					switch (PEEK(0)) {
-						case '0':
-						case '1': case '2': case '3':
-						case '4': case '5': case '6':
-						case '7': case '8': case '9':
-							break;
-						default: BACK(); goto handle_int;
+					if (PEEK(0) == '.') {  // ignore range and ellipsis
+						goto handle_int;
 					}
 					*digit++ = cur_ch;
 					goto handle_float;
@@ -571,12 +561,14 @@ static Token* lexer_emit_token(Lexer self) {
 			} while (cur_ch == '_' || isalnum(cur_ch));
 			BACK();
 			*text_ptr = 0;
-			current->str_value = current->literal_text + 1;
-			if (*current->str_value == 0) {  // Lone # is an identifier
+			if (current->literal_text[1] == 0) {  // Lone # is an identifier
 				current->str_value = current->literal_text;
 				EMIT(TOK_IDENT);
 			}
-			else EMIT(TOK_DIRECTIVE);
+			else {
+				current->str_value = current->literal_text + 1;
+				EMIT(str_to_dir(current->str_value));
+			}
 
 		case '`': // Forced Identifier
 			FWD();

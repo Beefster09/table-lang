@@ -1,23 +1,30 @@
 // To be included *only* from parser.c
 
-#define ADD_DECL(K, V) do { \
+#define ADD_ITEM(C, K, V, FMT, ...) do { \
 	if ((K)->name[0] == '_' && ((K)->name[1] == '_' || (K)->name[1] == 0)) { \
 		SYNTAX_ERROR_FROM(K, "'%s' is a reserved identifier", (K)->name); \
 	} \
-	else if (shgeti(module->scope, (K)->name) >= 0) { \
-		SYNTAX_ERROR_FROM(K, "Something named '%s' already exists in this module.", (K)->name); \
+	else if (shgeti(C, (K)->name) >= 0) { \
+		SYNTAX_ERROR_FROM(K, "Something named '%s' already exists in " FMT ".", (K)->name, ##__VA_ARGS__); \
 	} \
-	shput(module->scope, (K)->name, V); \
+	shput(C, (K)->name, V); \
 } while (0)
+
+#define ADD_DECL(K, V) ADD_ITEM(module->scope, K, V, "module '%s'", self->filename)
 
 static int toplevel_item(Parser self, AST_Module* module) {
 	while (TOP().type == TOK_EOL) POP();  // filter empty lines
 
 	bool is_pub = TOP().type == KW_PUB? (POP(), true) : false;
 
+	retry:
 	switch (TOP().type) {
 		case KW_PUB:
-			if (is_pub) SYNTAX_ERROR("Repeated 'pub'");
+			if (is_pub) {
+				SYNTAX_WARNING("Redundant 'pub'");
+				POP();
+				goto retry;
+			}
 			else SYNTAX_ERROR("Unexpected 'pub'");
 
 		case KW_IMPORT: {
@@ -30,7 +37,7 @@ static int toplevel_item(Parser self, AST_Module* module) {
 				}
 				else if (imp->is_using) {
 					char namebuf[32];
-					snprintf(namebuf, sizeof(namebuf), "?import_%d", shlen(module->scope));
+					snprintf(namebuf, sizeof(namebuf), "<import_%d>", shlen(module->scope));
 					shput(module->scope, namebuf, imp);
 				}
 			}
@@ -87,13 +94,70 @@ static int toplevel_item(Parser self, AST_Module* module) {
 					ADD_DECL(constant->name, constant);
 				}
 				else return 0;
-				EXPECT(TOK_EOL, "Expected end of line after const");
-				POP();
+				CONSUME(TOK_EOL, "Expected end of line after const");
 				return 1;
 			}
 		} break;
 
-		case KW_TEST: {
+		case KW_STRUCT: {
+			AST_Struct* structure = struct_def(self);
+			if (structure) {
+				ADD_DECL(structure->name, structure);
+				CONSUME(TOK_EOL, "Expected end-of-line after struct definition");
+				return 1;
+			}
+			else return 0;
+		} break;
+		// case KW_TABLE: APPEND_DECL(table_def);
+
+		case DIR_OVERLOAD: {  // TODO: move this logic to the lexer
+			NEW_NODE(overload, NODE_FUNC_OVERLOAD);
+			POP();  // '#overload'
+			switch (TOP().type) {
+				case TOK_IDENT:
+				case TOK_PLUS:
+				case TOK_MINUS:
+				case TOK_STAR:
+				case TOK_SLASH:
+				case TOK_TILDE:
+				case TOK_PERCENT:
+				case TOK_CARET:
+				case TOK_AMP:
+				case TOK_BAR:
+				case TOK_EQ:
+				case TOK_NE:
+				case TOK_LT:
+				case TOK_LE:
+				case TOK_GT:
+				case TOK_GE:
+				case TOK_CUSTOM_OPERATOR:
+					APPLY(overload->name, simple_name);
+					break;
+				default:
+					SYNTAX_ERROR("Expected an identifier or operator to name the overload");
+			}
+			while (TOP().type == TOK_EOL) POP();  // support multiple brace styles
+			CONSUME(TOK_LBRACE, "Expected '{' to start overload list");
+			while (TOP().type != TOK_RBRACE) {
+				switch (TOP().type) {
+					case TOK_IDENT:
+						APPEND(overload->overloads, simple_name);
+						EXPECT(TOK_EOL, "Expected end of line after named overload");
+						// intentional drop-thru
+					case TOK_EOL:
+						POP();
+						break;
+					default:
+						SYNTAX_ERROR("Unexpected '%s' in overload list", _token_);
+				}
+			}
+			POP();  // '}'
+			FINISH(overload);
+			ADD_DECL(overload->name, overload);
+			break;
+		}
+
+		case DIR_TEST: {
 			AST_Test* test = test_def(self);
 			if (test) {
 				arrpush(module->tests, test);
@@ -102,58 +166,6 @@ static int toplevel_item(Parser self, AST_Module* module) {
 			}
 			else return 0;
 		} break;
-
-		// case KW_STRUCT: APPEND_DECL(struct_def);
-		// case KW_TABLE: APPEND_DECL(table_def);
-
-		case TOK_DIRECTIVE:
-			if (strcmp(TOP().str_value, "overload") == 0) {  // TODO: move this logic to the lexer
-				NEW_NODE(overload, NODE_FUNC_OVERLOAD);
-				POP();  // '#overload'
-				switch (TOP().type) {
-					case TOK_IDENT:
-					case TOK_PLUS:
-					case TOK_MINUS:
-					case TOK_STAR:
-					case TOK_SLASH:
-					case TOK_TILDE:
-					case TOK_PERCENT:
-					case TOK_CARET:
-					case TOK_AMP:
-					case TOK_BAR:
-					case TOK_EQ:
-					case TOK_NE:
-					case TOK_LT:
-					case TOK_LE:
-					case TOK_GT:
-					case TOK_GE:
-					case TOK_CUSTOM_OPERATOR:
-						APPLY(overload->name, simple_name);
-						break;
-					default:
-						SYNTAX_ERROR("Expected an identifier or operator to name the overload");
-				}
-				while (TOP().type == TOK_EOL) POP();  // support multiple brace styles
-				CONSUME(TOK_LBRACE, "Expected '{' to start overload list");
-				while (TOP().type != TOK_RBRACE) {
-					switch (TOP().type) {
-						case TOK_IDENT:
-							APPEND(overload->overloads, simple_name);
-							EXPECT(TOK_EOL, "Expected end of line after named overload");
-							// intentional drop-thru
-						case TOK_EOL:
-							POP();
-							break;
-						default:
-							SYNTAX_ERROR("Unexpected '%s' in overload list", _token_);
-					}
-				}
-				POP();  // '}'
-				FINISH(overload);
-				ADD_DECL(overload->name, overload);
-				break;
-			}
-			else SYNTAX_ERROR("Directive '%s' is not valid here.", _token_);
 
 		case TOK_RPAREN: SYNTAX_ERROR("Unmatched parenthesis");
 		case TOK_RBRACE: SYNTAX_ERROR("Unmatched curly brace");
@@ -202,7 +214,45 @@ static AST_Node* table_def(Parser self) {
 }
 
 static AST_Node* struct_def(Parser self) {
-	return 0;
+	NEW_NODE(structure, NODE_STRUCT);
+	POP();  // 'struct'
+
+	EXPECT(TOK_IDENT, "Expected name of struct");
+	APPLY(structure->name, simple_name);
+
+	CONSUME(TOK_LBRACE, "Expected '{' to begin struct");
+	CONSUME(TOK_EOL, "Expected end-of-line to begin struct");
+
+	while (true) {
+		switch (TOP().type) {
+			case TOK_IDENT: {
+				NEW_NODE(field, NODE_FIELD);
+				APPLY(field->name, simple_name);
+				CONSUME(TOK_COLON, "Expected field to have a type");
+				APPLY(field->type, type, 0);
+				if (TOP().type == TOK_ASSIGN) {
+					POP();
+					APPLY(field->default_value, expression, 0);
+				}
+				FINISH(field);
+				ADD_ITEM(structure->fields, field->name, field, "struct '%s'", field->name->name);
+				CONSUME(TOK_EOL, "Expected end-of-line after struct field");
+			} break;
+			case DIR_CONSTRAINT: {
+				POP();
+				APPEND(structure->constraints, expression, 0);
+				CONSUME(TOK_EOL, "Expected end-of-line after struct constraint");
+			} break;
+			case TOK_EOL: POP(); break;
+			case TOK_RBRACE: goto exit_loop;
+			default: SYNTAX_ERROR("Expected a field definition here");
+		}
+	}
+	exit_loop:
+
+	CONSUME(TOK_RBRACE, "Expected '}' to end struct");
+
+	RETURN(structure);
 }
 
 static AST_Import* import(Parser self) {

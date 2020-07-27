@@ -224,7 +224,7 @@ inline static AST_Node* for_simple_or_range(Parser self, AST_Name* name, AST_Nod
 	if (expr) {
 		if (TOP().type == TOK_RANGE) {
 			NEW_NODE_FROM(range, NODE_FOR_RANGE, base);
-			POP();  // '..'
+			range->is_inclusive = POP().is_inclusive;
 			range->name = name;
 			range->start = expr;
 			switch (TOP().type) {

@@ -4,8 +4,6 @@
 #include <wchar.h>
 
 #include "keywords.gen.h"
-// #include "directives.gen.h"
-typedef int Directive;
 
 typedef struct _lex_state* Lexer;
 
@@ -29,8 +27,8 @@ typedef struct Token {
 		TOK_COLON     = ':',
 		TOK_ASSIGN    = '=',
 		TOK_DOT       = '.',
-		TOK_RANGE     = 16,
-		TOK_ELLIPSIS  = 17,
+		TOK_RANGE     = 16,  //  .. or ..<
+		TOK_ELLIPSIS  = 17,  //  ...
 		TOK_COMMA     = ',',
 		TOK_SEMICOLON = ';',
 		TOK_QMARK     = '?',
@@ -44,14 +42,14 @@ typedef struct Token {
 		TOK_AMP       = '&',
 		TOK_BAR       = '|',
 		TOK_TILDE     = '~',
-		TOK_ARROW     = 18,
+		TOK_ARROW     = 18,  // =>
 
-		TOK_EQ = 20,
-		TOK_NE = 21,
+		TOK_EQ = 20,  // ==
+		TOK_NE = 21,  // !=
 		TOK_LT = '<',
 		TOK_GT = '>',
-		TOK_LE = 22,
-		TOK_GE = 23,
+		TOK_LE = 22,  // <=
+		TOK_GE = 23,  // >=
 
 		TOK_CUSTOM_OPERATOR = 19,
 
@@ -77,6 +75,7 @@ typedef struct Token {
 		int32_t char_value;
 		Keyword kw_value;
 		Directive dir_value;
+		bool is_inclusive;
 	};
 } Token;
 

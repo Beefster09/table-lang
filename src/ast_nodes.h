@@ -100,6 +100,22 @@ typedef struct NODE_CONST {
 	bool pub;
 } AST_Const;
 
+typedef struct NODE_FIELD {
+	AST_NODE_COMMON_FIELDS
+	AST_Name* name;
+	AST_Node* type;
+	AST_Node* default_value;
+	bool is_using;
+} AST_Field;
+
+typedef struct NODE_STRUCT {
+	AST_NODE_COMMON_FIELDS
+	AST_Name* name;
+	AST_Node* ARRAY constraints;
+	struct { const char* key; AST_Field* value; } MAP fields;
+	bool pub;
+} AST_Struct;
+
 typedef struct NODE_TEST {
 	AST_NODE_COMMON_FIELDS
 	AST_String* description;
@@ -310,6 +326,7 @@ typedef struct NODE_FOR_RANGE {
 	AST_Name* name;
 	AST_Node* start;
 	AST_Node* end;
+	bool is_inclusive;
 } AST_ForRange;
 
 typedef struct NODE_FOR_PARALLEL {

@@ -21,5 +21,20 @@ void show_error_line(FILE* stream, const char* line, int line_no, int start_col,
 	fprintf(stream, "\n");
 }
 
+const char* read_entire_file(const char* filename) {
+	FILE* fp = fopen(filename, "r");
+	if (!fp) {
+		fprintf(stderr, "Unable to open '%s'", filename);
+		return NULL;
+	}
+	fseek(fp, 0, SEEK_END);
+	size_t src_size = ftell(fp);
+	rewind(fp);
+	char* buffer = malloc(src_size + 1);
+	fread(buffer, 1, src_size, fp);
+	buffer[src_size] = 0;
+	return buffer;
+}
+
 #define STB_DS_IMPLEMENTATION
 #include "stb_ds.h"

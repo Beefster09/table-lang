@@ -304,7 +304,25 @@ static AST_Node* expression(Parser self, int precedence_before) {
 				}
 				break;
 
-				// Drop through is intentional
+			case DIR_READ:
+				if (sub_expr) SYNTAX_ERROR("#read cannot be used in contexts where a string is not valid");
+				else {
+					NEW_NODE(str, NODE_STRING);
+					POP();
+					EXPECT(TOK_STRING, "Expected name of file to read");
+					unsigned int end_col = TOP().end_col;
+					const unsigned char* filename = POP().str_value;
+					if (!(str->value = read_entire_file(filename))) {
+						OUTPUT_ERROR(str->start_line, str->start_col, str->start_line, end_col,
+							"File error", "Unable to open '%s'", filename);
+						self->error_count++;
+						return NULL;
+					}
+					sub_expr = str;
+					FINISH(sub_expr);
+				}
+				break;
+
 			default:
 			case TOK_EOL:
 			case TOK_RPAREN:
