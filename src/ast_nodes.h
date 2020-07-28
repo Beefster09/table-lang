@@ -207,6 +207,14 @@ typedef struct NODE_FUNC_CALL {
 	bool is_word_op;
 } AST_FuncCall;
 
+typedef struct NODE_SLICE {
+	AST_NODE_COMMON_FIELDS
+	AST_Node* start;
+	AST_Node* end;
+	AST_Node* step;
+	bool is_inclusive;
+} AST_Slice;
+
 typedef struct NODE_SUBSCRIPT {
 	AST_NODE_COMMON_FIELDS
 	AST_Node* array;
@@ -326,6 +334,7 @@ typedef struct NODE_FOR_RANGE {
 	AST_Name* name;
 	AST_Node* start;
 	AST_Node* end;
+	AST_Node* step;
 	bool is_inclusive;
 } AST_ForRange;
 
@@ -344,6 +353,7 @@ typedef enum FOR_ {
 typedef struct NODE_FOR_LOOP {
 	AST_NODE_COMMON_FIELDS
 	AST_Node* ARRAY iterables;
+	AST_Name* label;
 	AST_Block* body;
 	// ForMode mode;
 	int mode;

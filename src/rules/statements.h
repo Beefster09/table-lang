@@ -228,11 +228,16 @@ inline static AST_Node* for_simple_or_range(Parser self, AST_Name* name, AST_Nod
 			range->name = name;
 			range->start = expr;
 			switch (TOP().type) {
+				case TOK_COLON:
 				case TOK_LBRACE:
 				case TOK_SEMICOLON:
 					break;
 				default:
 					APPLY(range->end, expression, 0);
+			}
+			if (TOP().type == TOK_COLON) {
+				POP();
+				APPLY(range->step, expression, 0);
 			}
 			RETURN(range);
 		}
@@ -315,6 +320,10 @@ static AST_ForLoop* for_loop(Parser self) {
 			if (TOP().type == TOK_LBRACE) break;  // Allow trailing semicolon
 		}
 		else break;
+	}
+	if (TOP().type == DIR_LABEL) {
+		POP();
+		APPLY(loop->label, simple_name);
 	}
 	while (TOP().type == TOK_EOL) POP();  // support ALL the brace styles
 	EXPECT(TOK_LBRACE, "Expected body of for loop");

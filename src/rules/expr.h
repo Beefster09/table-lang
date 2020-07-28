@@ -270,24 +270,18 @@ static AST_Node* expression(Parser self, int precedence_before) {
 
 			case TOK_LSQUARE:
 				if (sub_expr) {
-					if (LOOKAHEAD(1).type == TOK_STAR && LOOKAHEAD(2).type == TOK_RSQUARE) {
+					if (LOOKAHEAD(1).type == TOK_RSQUARE) {
 						NEW_NODE_FROM(broadcast, NODE_BROADCAST, sub_expr);
-						POP(); POP(); POP();  // [*]
+						POP(); POP();  // []
 						broadcast->target = sub_expr;
 						sub_expr = broadcast;
 					}
 					else {
-						POP();  // '['
 						APPLY(sub_expr, subscript, sub_expr);
-						EXPECT(TOK_RSQUARE, "Expected ']' at end of subscript");
-						POP();  // ']'
 					}
 				}
 				else {
-					POP();  // '['
 					APPLY(sub_expr, array_literal);
-					EXPECT(TOK_RSQUARE, "Expected ']' at end of array literal");
-					POP();  // ']'
 				}
 				FINISH(sub_expr);
 				break;
@@ -347,12 +341,14 @@ static AST_FuncCall* word_op(Parser self, AST_Node* left_side) {
 
 static AST_Array* array_literal(Parser self) {
 	NEW_NODE(sub, NODE_ARRAY);
+	POP();  // '['
 	do {
 		APPEND(sub->elements, expression, 0);
 		if (TOP().type == TOK_COMMA) POP();
 		else if (TOP().type != TOK_RSQUARE) SYNTAX_ERROR("Expected a comma here.");
 	} while (TOP().type != TOK_RSQUARE);
-	return sub;
+	POP();  // ']'
+	RETURN(sub);
 }
 
 static AST_FuncCall* func_call(Parser self, AST_Node* func) {
@@ -383,20 +379,79 @@ static AST_FuncCall* func_call(Parser self, AST_Node* func) {
 		if (TOP().type == TOK_COMMA) POP();
 		else if (TOP().type != TOK_RPAREN) SYNTAX_ERROR("Expected a comma here.");
 	}
-	return call;
+	RETURN(call);
+}
+
+inline static AST_Slice* finish_slice(Parser self, AST_Slice* slice) {
+	switch (TOP().type) {
+		case TOK_RANGE: {
+			const Token* range_token = &POP();
+			slice->is_inclusive = range_token->is_inclusive;
+			switch (TOP().type) {
+				case TOK_COMMA:
+					if (!slice->is_inclusive) {
+						SYNTAX_ERROR("Exclusive slice must have an explicit end value");
+					}
+					goto exit;
+				default:
+					APPLY(slice->end, expression, 0);
+					if (TOP().type != TOK_COLON) goto exit;
+				case TOK_COLON:
+					if (!slice->is_inclusive) {
+						SYNTAX_ERROR("Exclusive slice must have an explicit end value");
+					}
+					if (!slice->start && !slice->end) {
+						OUTPUT_ERROR(
+							range_token->start_line, range_token->start_col,
+							range_token->end_line, range_token->end_col,
+							"Syntax note", "subscript slice has no bounds and can be omitted here");
+					}
+					break;
+			}
+		}
+			// drop-thru is intentional
+		case TOK_COLON:
+			POP();
+			APPLY(slice->step, expression, 0);
+	}
+	exit:
+	FINISH(slice);
+	return slice;
 }
 
 static AST_Subscript* subscript(Parser self, AST_Node* array) {
 	NEW_NODE_FROM(sub, NODE_SUBSCRIPT, array);
+	POP();  // '['
 	sub->array = array;
 	do {
-		APPEND(sub->subscripts, expression, 0);
-		// TODO: slices
-		// if (TOP().type == TOK_RANGE) { ... }
+		if (TOP().type == TOK_RANGE) {
+			NEW_NODE(slice, NODE_SLICE);
+			if (!finish_slice(self, slice)) return NULL;
+			arrpush(sub->subscripts, slice);
+		}
+		else if (TOP().type == TOK_COLON) {
+			NEW_NODE(slice, NODE_SLICE);
+			APPLY(slice->step, expression, 0);
+			arrpush(sub->subscripts, slice);
+		}
+		else {
+			AST_Node* sub_expr = expression(self, 0);
+			if (!sub_expr) return NULL;
+			if (TOP().type == TOK_RANGE) {
+				NEW_NODE_FROM(slice, NODE_SLICE, sub_expr);
+				slice->start = sub_expr;
+				if (!finish_slice(self, slice)) return NULL;
+				arrpush(sub->subscripts, slice);
+			}
+			else {
+				arrpush(sub->subscripts, sub_expr);
+			}
+		}
 		if (TOP().type == TOK_COMMA) POP();
 		else if (TOP().type != TOK_RSQUARE) SYNTAX_ERROR("Expected a comma here.");
 	} while (TOP().type != TOK_RSQUARE);
-	return sub;
+	POP();  // ']'
+	RETURN(sub);
 }
 
 static AST_FuncCall* lambda(Parser self) {

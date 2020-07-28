@@ -224,9 +224,9 @@ foo\[1, 0, 2]  \\ => [4, 3, 5]Float
 You can also extract slices and dimensional cross-sections:
 ```
 foo : [30, 40, 50]Float = whatever()
-foo[*, 23, *]  \\ => A [30, 50]Float cross section at y = 23
+foo[.., 23, ..]  \\ => A [30, 50]Float cross section at y = 23
 foo[24, 31, 10..<30]  \\ => A [20]Float slice along z at 24, 31
-foo[2..16 :2, *, :5]  \\ => A [8, 40, 10] slice along x and z, with stride=2 along x, stride=5 along z
+foo[2..16 :2, .., :5]  \\ => A [8, 40, 10] slice along x and z, with stride=2 along x, stride=5 along z
 ```
 
 ### Internal Representation
@@ -260,7 +260,7 @@ struct ArraySlice(T: Type, dimensions: Int) {
 
 This makes slicing and transposing arrays very cheap by simply using different values in a new struct
 
-Flag and shape data is omitted at runtime  for slices with compile-time known size
+Flag and shape data is omitted at runtime for slices with compile-time known size
 
 ## Mutability
 

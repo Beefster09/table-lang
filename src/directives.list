@@ -32,6 +32,9 @@ patch  (qualname) "=" (expression, 0)
 for    ...
 yield  (statement)
 
+[loop]
+label  (simple_name)
+
 [expression]
 id     (expression, 0)  \\ string
 eval
