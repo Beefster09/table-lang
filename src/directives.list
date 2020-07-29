@@ -19,8 +19,11 @@ invariant  (expression, 0)
 
 [struct]
 constraint (expression, 0)
+owned
 
 [table]
+sparse
+dense
 
 [enum]
 
@@ -29,6 +32,9 @@ assume (expression, 0)
 pre    (expression, 0)
 post   (expression, 0)
 patch  (qualname) "=" (expression, 0)
+closure
+gpu      :tagnext for
+parallel :tagnext for
 for    ...
 yield  (statement)
 

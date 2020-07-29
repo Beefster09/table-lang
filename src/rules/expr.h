@@ -12,7 +12,6 @@
 #define ORELSE_PRECEDENCE     50
 #define TERNARY_PRECEDENCE    40
 #define BAR_PRECEDENCE        30
-#define LAMBDA_PRECEDENCE     25
 #define AWAIT_PRECEDENCE      20
 #define CMP_PRECEDENCE        10
 #define NOT_PRECEDENCE         8
@@ -61,11 +60,6 @@ static AST_Node* expression(Parser self, int precedence_before) {
 	while (1) {
 		switch (TOP().type) {
 			case TOK_IDENT:
-				if (!sub_expr && LOOKAHEAD(1).type == TOK_ARROW) {
-					APPLY(sub_expr, lambda);
-					break;
-				}
-				// drop-thru is intentional
 			case TOK_INT:
 			case TOK_FLOAT:
 			case TOK_BOOL:
@@ -82,7 +76,7 @@ static AST_Node* expression(Parser self, int precedence_before) {
 					EXPECT(TOK_IDENT, "Expected qualified name here (for word operator)");
 					APPLY(sub_expr, word_op, sub_expr);
 				}
-				else {  // perhaps this should be for broadcasting instead of an unnecessary syntactic sugar for function calls
+				else {  // use for annotations? intrinsics?
 					SYNTAX_ERROR("Unexpected backslash");
 				}
 				break;
@@ -97,7 +91,6 @@ static AST_Node* expression(Parser self, int precedence_before) {
 			case TOK_AMP:
 			case TOK_BAR:
 			case TOK_QMARK:
-			// case TOK_SEMICOLON:
 			case TOK_CUSTOM_OPERATOR:
 				if (sub_expr) {
 					if (LOOKAHEAD(1).type == TOK_ASSIGN) RETURN(sub_expr);
@@ -185,7 +178,7 @@ static AST_Node* expression(Parser self, int precedence_before) {
 					NEW_NODE_FROM(chain, NODE_COMPARISON, sub_expr);
 					arrpush(chain->operands, sub_expr);
 					do {
-						const char* cmp = POP().literal_text;  // TODO: consider enum representations
+						const char* cmp = POP().literal_text;  // TODO: consider enum representations instead of string
 						arrpush(chain->comparisons, cmp);
 						APPEND(chain->operands, expression, CMP_PRECEDENCE);
 					} while (is_comparison(TOP().type));
@@ -254,18 +247,14 @@ static AST_Node* expression(Parser self, int precedence_before) {
 
 			case TOK_LPAREN:
 				if (sub_expr) {
-					POP();  // '('
 					APPLY(sub_expr, func_call, sub_expr);
-					EXPECT(TOK_RPAREN, "Expected ')' at end of parenthesized sub-expression");
-					POP();  // ')'
 				}
 				else {
 					POP();  // '('
 					APPLY(sub_expr, expression, 0);
-					EXPECT(TOK_RPAREN, "Expected ')' at end of parenthesized sub-expression");
-					POP();  // ')'
+					CONSUME(TOK_RPAREN, "Expected ')' at end of parenthesized sub-expression");
+					FINISH(sub_expr);
 				}
-				FINISH(sub_expr);
 				break;
 
 			case TOK_LSQUARE:
@@ -281,9 +270,18 @@ static AST_Node* expression(Parser self, int precedence_before) {
 					}
 				}
 				else {
-					APPLY(sub_expr, array_literal);
+					APPLY(sub_expr, array_of_some_sort);
 				}
 				FINISH(sub_expr);
+				break;
+
+			case TOK_LBRACE:
+				if (sub_expr) RETURN(sub_expr);
+				else {
+					// TODO: trigger a syntax warning when this is used in an if, for, while, or match
+					// Suggest user add parens around block
+					APPLY(sub_expr, block);
+				}
 				break;
 
 			case TOK_DOT:
@@ -339,20 +337,59 @@ static AST_FuncCall* word_op(Parser self, AST_Node* left_side) {
 	RETURN(op);
 }
 
-static AST_Array* array_literal(Parser self) {
-	NEW_NODE(sub, NODE_ARRAY);
-	POP();  // '['
-	do {
-		APPEND(sub->elements, expression, 0);
-		if (TOP().type == TOK_COMMA) POP();
-		else if (TOP().type != TOK_RSQUARE) SYNTAX_ERROR("Expected a comma here.");
-	} while (TOP().type != TOK_RSQUARE);
-	POP();  // ']'
-	RETURN(sub);
+
+inline static AST_ArrayLiteral* array_literal(Parser self, Token* arr_start, AST_Node* first) {
+
+}
+
+static AST_Array* array_of_some_sort(Parser self) {
+	Token arr_start = POP();  // copy the token because it might fall off the buffer when parsing the element
+	if (TOP().type == TOK_RSQUARE) {
+		NEW_NODE_FROM(arr, NODE_ARRAY, &arr_start);
+		POP();
+		RETURN(arr);
+	}
+	AST_Node* first = expression(self, 0);
+	if (!first) return NULL;
+	switch (TOP().type) {
+		case TOK_COMMA:
+			POP();
+			// drop through is intentional
+		case TOK_RSQUARE: {
+			NEW_NODE_FROM(arr, NODE_ARRAY, &arr_start);
+			arrpush(arr->elements, first);
+			while (TOP().type != TOK_RSQUARE) {
+				APPEND(arr->elements, expression, 0);
+				if (TOP().type == TOK_COMMA) POP();
+				else if (TOP().type != TOK_RSQUARE) SYNTAX_ERROR("Expected a comma here.");
+			}
+			POP();  // ']'
+			RETURN(arr);
+		}
+		case KW_FOR: {
+			SYNTAX_ERROR("Array comprehensions are not implemented yet.");
+			NEW_NODE_FROM(arr_comp, NODE_ARRAY_COMP, &arr_start);
+		}
+		case TOK_RANGE: {
+			NEW_NODE_FROM(arr_range, NODE_ARRAY_RANGE, &arr_start);
+			arr_range->start = first;
+			arr_range->is_inclusive = POP().is_inclusive;
+			APPLY(arr_range->end, expression, 0);
+			if (TOP().type == TOK_COLON) {
+				POP();
+				APPLY(arr_range->step, expression, 0);
+			}
+			CONSUME(TOK_RSQUARE, "Expected a ']' at end of range array.");
+			RETURN(arr_range);
+		}
+		default:
+			SYNTAX_ERROR("Expected comma, 'for', range, or end of array");
+	}
 }
 
 static AST_FuncCall* func_call(Parser self, AST_Node* func) {
 	NEW_NODE_FROM(call, NODE_FUNC_CALL, func);
+	POP();  // '('
 	call->func = func;
 	bool seen_kwarg = false;
 	while (TOP().type != TOK_RPAREN) {
@@ -379,7 +416,8 @@ static AST_FuncCall* func_call(Parser self, AST_Node* func) {
 		if (TOP().type == TOK_COMMA) POP();
 		else if (TOP().type != TOK_RPAREN) SYNTAX_ERROR("Expected a comma here.");
 	}
-	RETURN(call);
+	POP();  // ')'
+	RETURN(call); // will be FINISHed by caller
 }
 
 inline static AST_Slice* finish_slice(Parser self, AST_Slice* slice) {
@@ -415,8 +453,7 @@ inline static AST_Slice* finish_slice(Parser self, AST_Slice* slice) {
 			APPLY(slice->step, expression, 0);
 	}
 	exit:
-	FINISH(slice);
-	return slice;
+	RETURN(slice);
 }
 
 static AST_Subscript* subscript(Parser self, AST_Node* array) {
@@ -452,9 +489,4 @@ static AST_Subscript* subscript(Parser self, AST_Node* array) {
 	} while (TOP().type != TOK_RSQUARE);
 	POP();  // ']'
 	RETURN(sub);
-}
-
-static AST_FuncCall* lambda(Parser self) {
-	NEW_NODE(anon_func, NODE_FUNC_DEF);
-	SYNTAX_ERROR("Lambdas are not implemented yet (and might never be?)");
 }

@@ -132,8 +132,8 @@ typedef struct NODE_MODULE {
 
 typedef struct NODE_BINOP {
 	AST_NODE_COMMON_FIELDS
-	const char* op;
 	AST_Node* lhs;
+	const char* op;
 	AST_Node* rhs;
 } AST_Binop;
 
@@ -197,6 +197,30 @@ typedef struct NODE_AWAIT {
 typedef struct NODE_ARRAY {
 	AST_NODE_COMMON_FIELDS
 	AST_Node* ARRAY elements;
+} AST_ArrayLiteral;
+
+typedef struct NODE_ARRAY_COMP {
+	AST_NODE_COMMON_FIELDS
+	AST_Node* element;
+	AST_Node* range;
+	AST_Node* filter;
+} AST_ArrayComprehension;
+
+typedef struct NODE_ARRAY_RANGE {
+	AST_NODE_COMMON_FIELDS
+	AST_Node* start;
+	AST_Node* end;
+	AST_Node* step;
+	bool is_inclusive;
+} AST_ArrayRange;
+
+typedef union {
+	struct {
+		AST_NODE_COMMON_FIELDS
+	};
+	AST_ArrayLiteral literal;
+	AST_ArrayLiteral comprehension;
+	AST_ArrayLiteral range;
 } AST_Array;
 
 typedef struct NODE_FUNC_CALL {

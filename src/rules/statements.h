@@ -151,7 +151,17 @@ static AST_VarDecl* declaration(Parser self) {
 			break;
 		case TOK_ASSIGN:
 			POP();  // '='
-			APPLY(var->value, expression, 0);
+			if (TOP().type == KW_UNDEFINED) {
+				if (!var->type) {
+					SYNTAX_ERROR_NONFATAL("Uninitialized variables cannot have an inferred type.");
+					// NOTE: although this error *happens to be* detectable during parsing, this should be deferred to the typing phase
+				}
+				POP();
+				var->is_uninitialized = true;
+			}
+			else {
+				APPLY(var->value, expression, 0);
+			}
 			break;
 		default: SYNTAX_ERROR("Unexpected token after type of variable declaration");
 	}
@@ -189,7 +199,7 @@ static AST_IfStatement* if_stmt(Parser self) {
 	NEW_NODE(cond, NODE_IF_STMT);
 	POP();  // 'if'
 	APPLY(cond->condition, expression, 0);
-	while (TOP().type == TOK_EOL) POP();  // support ALL the brace styles
+	// while (TOP().type == TOK_EOL) POP();  // support ALL the brace styles
 	EXPECT(TOK_LBRACE, "Expected if condition to be followed by a block");
 	APPLY(cond->body, block);
 	while (TOP().type == TOK_EOL) POP();
@@ -213,7 +223,7 @@ static AST_WhileLoop* while_loop(Parser self) {
 	NEW_NODE(loop, NODE_WHILE_LOOP);
 	POP();  // 'while'
 	APPLY(loop->condition, expression, 0);
-	while (TOP().type == TOK_EOL) POP();  // support ALL the brace styles
+	// while (TOP().type == TOK_EOL) POP();  // support ALL the brace styles
 	EXPECT(TOK_LBRACE, "Expected while condition to be followed by a block");
 	APPLY(loop->body, block);
 	RETURN(loop);
@@ -325,7 +335,7 @@ static AST_ForLoop* for_loop(Parser self) {
 		POP();
 		APPLY(loop->label, simple_name);
 	}
-	while (TOP().type == TOK_EOL) POP();  // support ALL the brace styles
+	// while (TOP().type == TOK_EOL) POP();  // support ALL the brace styles
 	EXPECT(TOK_LBRACE, "Expected body of for loop");
 	APPLY(loop->body, block);
 	RETURN(loop);

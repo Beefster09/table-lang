@@ -136,7 +136,7 @@ static int toplevel_item(Parser self, AST_Module* module) {
 				default:
 					SYNTAX_ERROR("Expected an identifier or operator to name the overload");
 			}
-			while (TOP().type == TOK_EOL) POP();  // support multiple brace styles
+			// while (TOP().type == TOK_EOL) POP();  // support multiple brace styles
 			CONSUME(TOK_LBRACE, "Expected '{' to start overload list");
 			while (TOP().type != TOK_RBRACE) {
 				switch (TOP().type) {
@@ -209,6 +209,8 @@ static AST_Const* const_def(Parser self) {
 	RETURN(constant);
 }
 
+#define ADD_FIELD(M, F, T) ADD_ITEM((M)->fields, (F)->name, F, T " '%s'", (M)->name)
+
 static AST_Node* table_def(Parser self) {
 	return 0;
 }
@@ -228,15 +230,76 @@ static AST_Node* struct_def(Parser self) {
 			case TOK_IDENT: {
 				NEW_NODE(field, NODE_FIELD);
 				APPLY(field->name, simple_name);
-				CONSUME(TOK_COLON, "Expected field to have a type");
-				APPLY(field->type, type, 0);
-				if (TOP().type == TOK_ASSIGN) {
-					POP();
-					APPLY(field->default_value, expression, 0);
+				switch (TOP().type) {
+					case TOK_COMMA: {
+						AST_Field** fields = NULL;  // NOTE: this leaks memory on fatal errors.
+						do {
+							POP();  // ','
+							NEW_NODE(f, NODE_FIELD);
+							EXPECT(TOK_IDENT, "Expected an identifier to name this field");
+							APPLY(f->name, simple_name);
+							arrpush(fields, f);
+						} while (TOP().type == TOK_COMMA);
+						CONSUME(TOK_COLON, "Expected a type for field list starting with '%s'", field->name->name);
+						APPLY(field->type, type, 0);
+						if (TOP().type == TOK_ASSIGN) {
+							POP();
+							APPLY(field->default_value, expression, 0);
+							if (TOP().type == TOK_COMMA) {
+								FINISH(field);
+								ADD_FIELD(structure, field, "struct");
+								int n_fields = arrlen(fields);
+								for (int i = 0; i < n_fields; i++) {
+									CONSUME(TOK_COMMA, "Expected another default value expression");
+									AST_Field* f = fields[i];
+									f->type = field->type;
+									APPLY(f->default_value, expression, 0);
+									FINISH(f);
+									ADD_FIELD(structure, f, "struct");
+								}
+								arrfree(fields);
+								switch (TOP().type) {
+									case TOK_COMMA:
+										SYNTAX_ERROR("Too many default values in struct field list");
+										break;
+									case TOK_EOL:
+										POP();
+										break;
+									default:
+										SYNTAX_ERROR("Expected end-of-line after struct field list");
+								}
+								break;
+							}
+						}
+						FINISH(field);
+						ADD_FIELD(structure, field, "struct");
+						int n_fields = arrlen(fields);
+						for (int i = 0; i < n_fields; i++) {
+							AST_Field* f = fields[i];
+							f->type = field->type;
+							f->default_value = field->default_value;
+							FINISH(f);
+							ADD_FIELD(structure, f, "struct");
+						}
+						arrfree(fields);
+						CONSUME(TOK_EOL, "Expected end-of-line after struct field list");
+					} break;
+
+					case TOK_COLON: {
+						POP();
+						APPLY(field->type, type, 0);
+						if (TOP().type == TOK_ASSIGN) {
+							POP();
+							APPLY(field->default_value, expression, 0);
+						}
+						FINISH(field);
+						ADD_FIELD(structure, field, "struct");
+						CONSUME(TOK_EOL, "Expected end-of-line after struct field");
+					} break;
+
+					default:
+						SYNTAX_ERROR("Expected ':' and type or comma-separated identifier list here");
 				}
-				FINISH(field);
-				ADD_ITEM(structure->fields, field->name, field, "struct '%s'", field->name->name);
-				CONSUME(TOK_EOL, "Expected end-of-line after struct field");
 			} break;
 			case DIR_CONSTRAINT: {
 				POP();

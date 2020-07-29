@@ -181,10 +181,10 @@ who_knows: [...] Float  \\ any-dimensional array
 Arrays support broadcasting of functions and operators with scalars. (similar to numpy, but more explicit)
 
 ```
-foo : []!Int = [1, 2, 3, 4]
-print(foo[] ^ 2)  \\ -> [1, 4, 9, 16]
-print(8 * foo[])  \\ -> [8, 16, 24, 32]
-print(sqrt(foo[])) \\ -> [1.0, 1.414213, 1.732050, 2.0]
+foo : []!Int = [1..10]  \\ i.e. [1, 2, 3, 4 ... 10]
+print(foo[] ^ 2)          \\ -> [1, 4, 9, 16 ...]
+print(8 * foo[])          \\ -> [8, 16, 24, 32 ...]
+print(sqrt(foo[]))        \\ -> [1.0, 1.414213, 1.732050, 2.0 ...]
 ```
 
 Broadcasted op-assignments are only legal if the result of the operator returns the same type as the
@@ -193,7 +193,8 @@ array's contained type.
 ```
 foo[] += 4
 print(foo)  \\ -> [5, 6, 7, 8]
-foo[] *= math.PI  \\ type mismatch error!
+
+foo[] *= math.PI  \\ type mismatch: Int * Float => Float
 ```
 
 Whole expressions are lumped together, so
@@ -219,6 +220,7 @@ Multi-dimensional arrays can be transposed easily:
 ```
 foo : [3, 4, 5]Float = whatever()
 foo\[1, 0, 2]  \\ => [4, 3, 5]Float
+\\ Maybe this shouldn't have a special syntax since it could lead to more cache misses.
 ```
 
 You can also extract slices and dimensional cross-sections:
@@ -236,8 +238,8 @@ For dynamic arrays:
 ```
 struct DynamicArray(T: Type) {
     data: @T
-    length: Int
-    capacity: Int
+    length: Int32
+    capacity: Int32
 }
 ```
 
@@ -265,7 +267,7 @@ Flag and shape data is omitted at runtime for slices with compile-time known siz
 ## Mutability
 
 All values are immutable by default when explicitly typed.
-To mark something as mutable, add a `!` after its type declaration.
+To mark something as mutable, add a `!` before its type declaration.
 This can be combined with nullability and pointers.
 
 Local variables are as mutable as possible when their type is inferred.
@@ -338,8 +340,8 @@ Because `foo` could be null when `bar` is called.
 `@` is the symbol designating a pointer and should be placed to the left of the type.
 There is a distinction between a pointer to a nullable type and a nullable pointer to a type:
 
-* `@Int?` - pointer to nullable int
-* `@?Int` - nullable pointer to int
+* `@?Int` - pointer to nullable int
+* `?@Int` - nullable pointer to int
 
 The underlying implementation details *may* be identical in some cases.
 
@@ -352,7 +354,7 @@ Unlike the C family, pointers are dereferenced by default. Each use of `@` will 
 of dereferencing, thus:
 
 ```
-foo : @?!Int! = null
+foo : !?@!Int = null
 bar := 27
 baz := 6
 @foo = bar  \\ foo now points to bar
@@ -378,7 +380,7 @@ foo : @@@Float = undefined
 ```
 
 Note that it is only possible to have as many @s as the right side type has, plus one more for
-variables in scope (as opposed to literals and temps)
+addressable values (e.g. variables in scope)
 
 So all the following are valid:
 
@@ -398,7 +400,7 @@ But these are invalid:
 ```
 
 When a function call requires a pointer, you can still pass a value and it will be implicitly
-converted to a pointer:
+converted to a pointer, provided it is addressable:
 
 ```
 func do_something(a: @Int): Float {
@@ -440,8 +442,8 @@ entries when they are no longer needed.
 table Entity {
     name: String #key
     position: Vec3
-    rock_data: @?Rock
-    player_data: @?Player
+    rock_data: ?@Rock
+    player_data: ?@Player
 }
 ```
 
@@ -523,11 +525,14 @@ I'm not a fan of any of them:
     basically the same no matter which line it is writing.
     * Resource leaks are really easy to create by accident without RAII or something like `with` in
     Python.
+    * Elegantly handles overflow errors and bounds checked array accesses.
 * Return codes, whether alone or with multiple return values (C, Perl, Lua, Go, GDScript, Jai)
     * Introduces noise from explicit control flow
     * It's really easy to ignore errors
+    * Creates friction for medium to large formulas that can fail at multiple places
 * Errors are stored in a global variable, queue, or stack (C, OpenGL)
     * Errors are often far-removed from their cause
+    * Nothing to enforce handling the error
 
  I would like to somehow strike a balance between all these options. Goals:
 
@@ -577,14 +582,16 @@ zero and null pointer dereferences) do not occur at runtime in the first place.
         * `#int_overflow abort` to abort the expression evaluation on overflow and return an error
         * `#float_overflow infinity` to replace float overflow with float infinity (the default)
         * `#float_overflow abort` to abort expressions immediately on float overflow
-        * `#divide_by_zero numerator` to make the result of zero division be the same as if no division has occurred
-        * `#divide_by_zero saturate` to make the result of zero division be the value represented by all bits set
-        * `#divide_by_zero <some value>` to make the result of any zero division be the provided value
-        * `#divide_by_zero abort` to abort immediately with an error when zero division occurs
-        * `#divide_by_zero unreachable` to trigger static analysis to prevent division by zero (the default, maybe)
+        * `#err divide_by_zero: numerator` to make the result of zero division be the same as if no division has occurred
+        * `#err divide_by_zero: saturate` to make the result of zero division be the value represented by all bits set
+        * `#err divide_by_zero: <expression>` to make the result of any zero division be the provided constant expression
+        * `#err divide_by_zero: abort` to abort immediately with an error when zero division occurs
+        * `#err divide_by_zero: unreachable` to trigger static analysis to prevent division by zero (the default, maybe)
+        * `#err out_of_bounds: unreachable`
     * These apply only at lexical scope level
 * Syntax to catch errors from previous statement (usually line)
 * Exceptions that don't propagate beyond the current function and act like `return`s
+    * Should probably be discouraging the practice of propagating errors to the caller.
 
 
 # Compile-time value constraints
@@ -604,12 +611,14 @@ than inferring them.
 
 ## Invariants
 
-Data fields (in structs and tables) can also be tagged with `#invariant`, making it a compile-time
+Data fields (in structs and tables) can also be tagged with `#constraint`, making it a compile-time
 error to set the field to a value that is not guaranteed satisfy the invariant.
+
+`#constraint` can also be used on type parameters.
 
 ## Assumptions
 
-`#assume` has a similar effect to `#invariant`, `#pre`, and `#post`, except that it never checks
+`#assume` has a similar effect to `#constraint`, `#pre`, and `#post`, except that it never checks
 that the condition will always hold; it merely assumes that it does. Use with care.
 
 # Inline Tests
@@ -646,7 +655,7 @@ Character literals may optionally omit the closing single quote.
 ## Semicolons
 
 This language does not use semicolons to terminate or separate statements.
-To make line continuations less error-prone, a backslash followed by any number of non-printable
+To make line continuations less error-prone, a backslash followed by any number of whitespace
 characters then a newline is treated as a line continuation.
 Additionally, when inside parentheses or square brackets, newlines are ignored.
 
@@ -669,7 +678,7 @@ Strings are normally surrounded by double quotes, but have a few variants.
 ## Operators
 
 Operator overloads are required to be (nearly) pure functions.
-They may not have side effects, except for temporary allocators and debug printing.
+They may not have side effects, except for temporary allocators and logging.
 
 You can overload existing operators (except for boolean logic operators) by naming a function
 with the same symbols:
@@ -729,9 +738,6 @@ From tightest to loosest: (left-associative unless otherwise stated)
 * `?` - "elvis" / "or else" / null-coalescing operator
 * `x if cond else y` ternary (non-associative)
 * `|`
-* `=>` - anonymous functions (right-associative)
-    - (Am I even going to have these? Function expressions are already possible. Lambdas provide a
-       redundant alternative to existing syntax and are harder to parse.)
 * Comparison operators `==`, `!=`, `<`, `<=`, `>`, and `>=`  (chainable, as in Python)
 * `not`
 * `and`
@@ -772,7 +778,7 @@ false * x = (the zero value of T)
 
 "any string" * x = (the string repeated 'x' times)
 
-### $A (any operator) $B?
+### $A (any operator) $?B
 
 x (whatever) null = null
 x (whatever) y = whatever it would have equalled normally
@@ -835,7 +841,7 @@ Allocators are assumed to return pointers that do not alias anything else in sco
 * Explicit is better than ambiguous.
 * Pragmatic is better than traditional.
 * Boring is better than trendy.
-* Intuitive is better than idiomatic.
+* Obvious is better than idiomatic.
 * Precise is better than intuitive.
 * Pretty doesn't have to mean slow.
 * Fast doesn't have to mean ugly.
@@ -844,7 +850,6 @@ Allocators are assumed to return pointers that do not alias anything else in sco
 * Code will evolve. Refactoring code should involve little more than search and replace.
 * Your data structures tell you more about performance than your code.
 * Sharing mutable data is hard. Avoid it.
-* It should be hard to do error-prone things.
 * Mistakes happen. Make them easy to find.
 * Computers are better at finding mistakes than humans.
 * Computation should be done with code, not type systems.
