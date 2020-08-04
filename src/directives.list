@@ -26,6 +26,7 @@ sparse
 dense
 
 [enum]
+auto
 
 [statement]
 assume (expression, 0)
@@ -45,3 +46,8 @@ label  (simple_name)
 id     (expression, 0)  \\ string
 eval
 read   (string_literal)
+
+[declaration]
+default
+zero
+undef

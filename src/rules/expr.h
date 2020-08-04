@@ -337,11 +337,6 @@ static AST_FuncCall* word_op(Parser self, AST_Node* left_side) {
 	RETURN(op);
 }
 
-
-inline static AST_ArrayLiteral* array_literal(Parser self, Token* arr_start, AST_Node* first) {
-
-}
-
 static AST_Array* array_of_some_sort(Parser self) {
 	Token arr_start = POP();  // copy the token because it might fall off the buffer when parsing the element
 	if (TOP().type == TOK_RSQUARE) {

@@ -9,11 +9,11 @@ keywords = [line.strip() for line in open(keywords_txt)]
 
 directives_list = os.path.join(os.path.dirname(__file__), 'directives.list')
 
-directives = [
+directives = sorted({
     line.strip().split()[0]
     for line in open(directives_list)
     if line[0].isalpha()
-]
+})
 
 print("#pragma once")
 

@@ -20,7 +20,6 @@ goto
 if
 else
 match
-default
 for
 while
 break
@@ -28,7 +27,6 @@ skip
 with
 using
 alias
-undefined
 and
 or
 not

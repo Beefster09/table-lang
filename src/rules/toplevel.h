@@ -108,6 +108,16 @@ static int toplevel_item(Parser self, AST_Module* module) {
 			}
 			else return 0;
 		} break;
+
+		case KW_ENUM: {
+			AST_Enum* enumeration = enum_def(self);
+			if (enumeration) {
+				ADD_DECL(enumeration->name, enumeration);
+				CONSUME(TOK_EOL, "Expected end-of-line after enum definition");
+				return 1;
+			}
+			else return 0;
+		}
 		// case KW_TABLE: APPEND_DECL(table_def);
 
 		case DIR_OVERLOAD: {  // TODO: move this logic to the lexer
@@ -215,7 +225,7 @@ static AST_Node* table_def(Parser self) {
 	return 0;
 }
 
-static AST_Node* struct_def(Parser self) {
+static AST_Struct* struct_def(Parser self) {
 	NEW_NODE(structure, NODE_STRUCT);
 	POP();  // 'struct'
 
@@ -316,6 +326,41 @@ static AST_Node* struct_def(Parser self) {
 	CONSUME(TOK_RBRACE, "Expected '}' to end struct");
 
 	RETURN(structure);
+}
+
+static AST_Enum* enum_def(Parser self) {
+	NEW_NODE(enumeration, NODE_ENUM);
+	POP();  // 'enum'
+
+	EXPECT(TOK_IDENT, "Expected name of enum");
+	APPLY(enumeration->name, simple_name);
+
+	CONSUME(TOK_LBRACE, "Expected '{' to begin enum");
+	CONSUME(TOK_EOL, "Expected end-of-line to begin enum");
+	while (true) {
+		switch (TOP().type) {
+			case TOK_IDENT: {
+				NEW_NODE(val, NODE_ENUM_VALUE);
+				APPLY(val->name, simple_name);
+				CONSUME(TOK_ASSIGN, "Enum value requires an explicit value");
+				switch (TOP().type) {
+					case DIR_AUTO: break;
+					default:
+						APPLY(val->value, expression, 0);
+				}
+				FINISH(val);
+				ADD_FIELD(enumeration, val, "enum");
+			}
+			case TOK_EOL: POP(); break;
+			case TOK_RBRACE: goto exit_loop;
+			default: SYNTAX_ERROR("Expected an enum value here");
+		}
+	}
+	exit_loop:
+
+	CONSUME(TOK_RBRACE, "Expected '}' to end enum");
+
+	RETURN(enumeration);
 }
 
 static AST_Import* import(Parser self) {

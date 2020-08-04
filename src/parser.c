@@ -81,6 +81,7 @@ static AST_Node* node_create(Parser self, NodeType type) {
 #pragma GCC diagnostic push
 #pragma GCC diagnostic ignored "-Wincompatible-pointer-types"
 #pragma GCC diagnostic ignored "-Wunused-value"
+#pragma GCC diagnostic ignored "-Wpointer-sign"
 
 #define TOP() (*lexer_peek_token(self->lex, 0))
 #define LOOKAHEAD(n) (*lexer_peek_token(self->lex, n))
@@ -102,13 +103,13 @@ static AST_Node* node_create(Parser self, NodeType type) {
 	} while (0)
 
 #define OUTPUT_ERROR(l0, c0, l1, c1, err_type, fmt, ...) do { \
-	const char** lines = lexer_get_lines(self->lex, 0); \
+	const char* _line_ = lexer_get_lines(self->lex, 0)[(l0) - 1]; \
 	if (RULE_DEBUG) fprintf(stderr, "(Emitted from rule '%s' @ %s:%d)\n", __func__, strrchr(__FILE__, '/') + 1, __LINE__); \
-	fprintf(stderr, err_type " in '%s' at line %d, column %d: " fmt "\n", \
-		self->src, (l0), (c0), ##__VA_ARGS__ ); \
+	fprintf(stderr, "In '%s' at line %d, column %d...\n  ", self->src, (l0), (c0)); \
+	fprintf(stderr, err_type ": " fmt "\n", ##__VA_ARGS__);\
 	show_error_line(stderr, \
-		lines[(l0) - 1], (l0), (c0), \
-		((l1) > (l0))? strlen(lines[(l0) - 1]) : (c1)); \
+		_line_, (l0), (c0), \
+		((l1) > (l0))? strlen(_line_) : (c1)); \
 } while (0)
 
 #define SYNTAX_WARNING(fmt, ...) do { \

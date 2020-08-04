@@ -116,6 +116,20 @@ typedef struct NODE_STRUCT {
 	bool pub;
 } AST_Struct;
 
+typedef struct NODE_ENUM_VALUE {
+	AST_NODE_COMMON_FIELDS
+	AST_Name* name;
+	AST_Node* value;
+} AST_EnumValue;
+
+typedef struct NODE_ENUM {
+	AST_NODE_COMMON_FIELDS
+	AST_Name* name;
+	struct { const char* key; AST_EnumValue* value; } MAP fields;
+	bool pub;
+	bool is_flags;
+} AST_Enum;
+
 typedef struct NODE_TEST {
 	AST_NODE_COMMON_FIELDS
 	AST_String* description;
@@ -301,12 +315,19 @@ typedef struct NODE_UNION {
 
 // Statements
 
+typedef enum INIT_ {
+	INIT_ZERO          = 0,
+	INIT_EXPR          = 1,
+	INIT_DEFAULT       = 2,
+	INIT_UNINITIALIZED = 3,
+} VarInit;
+
 typedef struct NODE_VAR_DECL {
 	AST_NODE_COMMON_FIELDS
 	AST_Name* name;
 	AST_Node* type;
 	AST_Node* value;
-	bool is_uninitialized;
+	VarInit init;
 } AST_VarDecl;
 
 typedef struct NODE_OP_ASSIGN {
@@ -379,8 +400,7 @@ typedef struct NODE_FOR_LOOP {
 	AST_Node* ARRAY iterables;
 	AST_Name* label;
 	AST_Block* body;
-	// ForMode mode;
-	int mode;
+	ForMode mode;
 } AST_ForLoop;
 
 typedef struct NODE_MATCH_CASE {

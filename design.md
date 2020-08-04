@@ -279,7 +279,7 @@ Variables cannot contain null unless their type allows it.
 Non-nullable variables use their default values if not initialized.
 
 Nulls do not need to be unwrapped to be used. As long as their value is guaranteed to not be null
-when a non-null value is needed, the use is legal.
+when a non-null value is required, the use is legal.
 
 `null` is "contagious" rather than producing runtime crashes:
 
@@ -292,6 +292,13 @@ when a non-null value is needed, the use is legal.
       and replace to refactor it properly.
 - Nearly all operations are automatically defined for nullables if their non-nullable counterparts
   are defined. The result of anything non-nullable receiving a `null` will be `null` by default.
+
+CONCERN: This could make it difficult to determine exactly where a null cascade began
+MITIGATION: At least it gets caught at compile time and doesn't turn into PHP.
+
+CONCERN: Null cascades can silently throw off the branch predictor
+This may not be an issue, as one philosophy of the language is that your data structures tell you
+more about performance than the code itself.
 
 Both of these are legal and equivalent:
 
@@ -371,7 +378,7 @@ add as many `@`s as needed on the right side for the types to match (assuming th
 
 ```
 bar : @@Float = heapval(heapval(13.37))
-foo : @@@Float = undefined
+foo : !@@@Float = undefined
 \\ All of the following are equivalent:
 @@@foo = bar
 @@@foo = @bar
@@ -417,7 +424,7 @@ Structs are POD.
 * Pointers in structs may be marked as `#owned`, meaning a call to `free` on that struct will also free its contents.
 * Recursive pointers (i.e. pointers to a struct of the same type, directly or indirectly) must be nullable.
 
-Struct literals don't exist. Create struct values with a constructor-like syntax instead.
+Struct initializers don't exist. Create struct values with a constructor-like syntax instead.
 
 ## Unions
 
@@ -428,6 +435,8 @@ Unions are tagged.
 You can create an open union which allows any type to join it later. This allows for something like type polymorphism.
 
 ## Tables
+
+MAYBE these should live in userland as a metaprogramming library?
 
 A table is conceptually similar to a struct, but it is only stored in homogeneous memory either on
 the heap or in static memory. Tables are dynamically sized by default and are ordered arbitrarily.
@@ -517,6 +526,7 @@ I'm not a fan of any of them:
 * Errors bundled in a tagged union. (Rust, Scala)
     * Same effect of Zig's model, but leveraging the type system instead of a language feature.
     * Error handling looks cryptic/idiomatic and verbose
+    * Unwrapping the value introduces clutter
 * Exceptions as traditionally implemented. (Java, C#, Python, C++ when it feels like it)
     * Obscures control flow to runtime context. Acts like a computed goto, where you can never be
     exactly sure where a throw will take you or where a catch will come from since every expression
@@ -529,9 +539,12 @@ I'm not a fan of any of them:
 * Return codes, whether alone or with multiple return values (C, Perl, Lua, Go, GDScript, Jai)
     * Introduces noise from explicit control flow
     * It's really easy to ignore errors
+        * If dropping a value on the floor is a syntax error, it's a little harder, but then you get
+        `nil, err` clutter as seen in Go
     * Creates friction for medium to large formulas that can fail at multiple places
 * Errors are stored in a global variable, queue, or stack (C, OpenGL)
     * Errors are often far-removed from their cause
+    * Errors can be overwritten or masked easily
     * Nothing to enforce handling the error
 
  I would like to somehow strike a balance between all these options. Goals:
@@ -589,7 +602,7 @@ zero and null pointer dereferences) do not occur at runtime in the first place.
         * `#err divide_by_zero: unreachable` to trigger static analysis to prevent division by zero (the default, maybe)
         * `#err out_of_bounds: unreachable`
     * These apply only at lexical scope level
-* Syntax to catch errors from previous statement (usually line)
+* Syntax to catch errors from previous statement (usually line, but could be a block)
 * Exceptions that don't propagate beyond the current function and act like `return`s
     * Should probably be discouraging the practice of propagating errors to the caller.
 

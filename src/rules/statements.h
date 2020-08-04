@@ -135,6 +135,18 @@ static AST_Node* statement(Parser self) {
 	return stmt;
 }
 
+#define DECL_SPECIAL(WHICH) { \
+	POP(); \
+	if (!var->type) { \
+		AST_Node* t = type(self , 0); \
+		if (!t) return NULL; \
+		AST_MutableType* mut = node_create(self, NODE_MUTABLE_TYPE); \
+		mut->base = t; \
+		var->type = mut; \
+	} \
+	var->init = WHICH; \
+} break
+
 static AST_VarDecl* declaration(Parser self) {
 	NEW_NODE(var, NODE_VAR_DECL);
 
@@ -144,29 +156,34 @@ static AST_VarDecl* declaration(Parser self) {
 	CONSUME(TOK_COLON, "Expected colon in variable declaration");
 	if (TOP().type != TOK_ASSIGN) {
 		APPLY(var->type, type, 0);
-		EXPECT(TOK_ASSIGN, "Expected '=' after type");
 	}
 	switch (TOP().type) {
+		case TOK_RBRACE:
 		case TOK_EOL:
+			SYNTAX_WARNING(
+				"Variable declaration '%s' was not explicitly initialized.\n"
+				"  Suggest using  ... = #default  to initialize to the default value",
+				var->name->name, var->name->name
+			);
+			var->init = INIT_DEFAULT;
 			break;
 		case TOK_ASSIGN:
 			POP();  // '='
-			if (TOP().type == KW_UNDEFINED) {
-				if (!var->type) {
-					SYNTAX_ERROR_NONFATAL("Uninitialized variables cannot have an inferred type.");
-					// NOTE: although this error *happens to be* detectable during parsing, this should be deferred to the typing phase
-				}
-				POP();
-				var->is_uninitialized = true;
-			}
-			else {
-				APPLY(var->value, expression, 0);
-			}
-			break;
+			switch (TOP().type) {
+				case DIR_UNDEF:   DECL_SPECIAL(INIT_UNINITIALIZED);
+				case DIR_DEFAULT: DECL_SPECIAL(INIT_DEFAULT);
+				case DIR_ZERO:    DECL_SPECIAL(INIT_ZERO);
+				default: {
+					APPLY(var->value, expression, 0);
+					var->init = INIT_EXPR;
+				} break;
+			} break;
 		default: SYNTAX_ERROR("Unexpected token after type of variable declaration");
 	}
 	END_STMT(var, "variable declaration");
 }
+
+#undef DECL_SPECIAL
 
 static AST_Block* block(Parser self) {
 	NEW_NODE(blk, NODE_BLOCK);

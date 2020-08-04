@@ -27,6 +27,9 @@ TYPE_FORMATS = {
     ('void', '*'):      '%p',
 }
 
+node_types = {}
+enum_types = {}
+
 def parse_type(c_type):
     parts = tuple(c_type.replace('*', ' * ').split())
     filtered = tuple(p for p in parts if p not in ('const', 'ARRAY', 'MAP'))
@@ -40,7 +43,13 @@ def parse_type(c_type):
         'is_node': filtered[0].startswith('AST_') and filtered[1] == '*',
         'is_array': parts[-1] == 'ARRAY',
         'is_map': False,
+        'is_enum': len(filtered) == 1 and filtered[0] in enum_types,
     }
+    if result['is_enum']:
+        enum = enum_types[filtered[0]]
+        result['filter_l'] = f'enum_{enum["prefix"].lower()}to_str('
+        result['filter_r'] = ')'
+        result['format'] = '%s'
     return result
 
 def parse_map_type(key_type, value_type):
@@ -58,10 +67,16 @@ def parse_map_type(key_type, value_type):
         'is_node': value_filtered[0].startswith('AST_') and value_filtered[1] == '*',
         'is_array': value_parts[-1] == 'ARRAY',
         'is_map': True,
+        'is_enum': len(value_filtered) == 1 and value_filtered[0] in enum_types,
         'key_type': key_filtered,
         'key_format': TYPE_FORMATS.get(key_filtered),
         'key_is_primitive': key_filtered in TYPE_FORMATS,
     }
+    if result['is_enum']:
+        enum = enum_types[value_filtered[0]]
+        result['filter_l'] = f'enum_{enum["prefix"].lower()}to_str('
+        result['filter_r'] = ')'
+        result['format'] = '%s'
     return result
 
 node_start = re.compile(r"^\s*typedef\s+struct\s+(NODE_\w+)")
@@ -69,16 +84,18 @@ node_field = re.compile(r"^\s*([\w\s\*]+)\s*\b(\w+);")
 node_map_field = re.compile(r"^\s*struct\s*{\s*(.+)\s*\bkey\s*;\s*(.+)\s*\bvalue\s*;\s*}\s*MAP\s*\b(\w+);")
 node_end = re.compile(r"^\s*}\s*AST_(\w+)\s*;")
 
-node_types = {}
+enum_start = re.compile(r"^\s*typedef\s+enum\s+(\w+)")
+enum_value = re.compile(r"^\s*(\w+)\s*=\s*((?:0x)?\d+|'.+')\s*,?\s*$")
+enum_end = re.compile(r"^\s*}\s*(\w+)\s*;")
 
 ast_nodes_h = os.path.join(os.path.dirname(__file__), 'ast_nodes.h')
 
 with open(ast_nodes_h) as f:
     fs = iter(f)
     for line in fs:
-        match_start = node_start.match(line)
-        if match_start:
-            tag = match_start.group(1)
+        match_node_start = node_start.match(line)
+        if match_node_start:
+            tag = match_node_start.group(1)
             node_type = {'tag': tag, 'fields': {}}
             for line in fs:
                 match_end = node_end.match(line)
@@ -87,17 +104,50 @@ with open(ast_nodes_h) as f:
                     node_types[tag] = node_type
                     break
                 match_field = node_field.match(line)
-                match_map_field = node_map_field.match(line)
                 if match_field:
                     node_type['fields'][match_field.group(2)] = parse_type(match_field.group(1))
-                elif match_map_field:
+                    continue
+                match_map_field = node_map_field.match(line)
+                if match_map_field:
                     node_type['fields'][match_map_field.group(3)] = parse_map_type(match_map_field.group(1), match_map_field.group(2))
+        match_enum_start = enum_start.match(line)
+        if match_enum_start:
+            prefix = match_enum_start.group(1)
+            enum_type = {'prefix': prefix, 'values': {}}
+            for line in fs:
+                match_end = enum_end.match(line)
+                if match_end:
+                    enum_type['name'] = match_end.group(1)
+                    enum_types[match_end.group(1)] = enum_type
+                    break
+                match_value = enum_value.match(line)
+                if match_value:
+                    enum_value_name = match_value.group(1)
+                    info = {
+                        'name': enum_value_name,
+                        'value': match_value.group(2)
+                    }
+                    if enum_value_name.startswith(prefix):
+                        info['pretty'] = enum_value_name[len(prefix):]
+                    else:
+                        info['pretty'] = f"<{enum_value_name}>"
+                    enum_type['values'][enum_value_name] = info
 
 if int(os.environ.get('DEBUG', '0')):
     debug(pprint.pformat(node_types))
+    debug(pprint.pformat(enum_types))
 
 def indent(tabs=1, offset=0):
     code(tabs, f'for (int j = indent + {offset}; j > 0; j--) fprintf(stream, "{AST_INDENT}");')
+
+for enum in enum_types.values():
+    print(f'static const char* enum_{enum["prefix"].lower()}to_str({enum["name"]} value) {{')
+    code(1, 'switch (value) {')
+    for info in enum['values'].values():
+        code(2, f'case {info["name"]}: return "{info["pretty"]} ({info["value"]})";')
+    code(2, f'default: return "<{enum["name"]} \\?\\?\\?>";')
+    code(1, '}')
+    print('}')
 
 print("static void print_ast_node(FILE* stream, const AST_Node* node, int indent) {")
 
@@ -212,7 +262,7 @@ for tag, node in sorted(node_types.items()):
                     code(4, f'fprintf(stream, "{name} = {{ }}\\n");')
                     code(3, '}')
 
-                elif info['is_primitive']:
+                elif info['is_primitive'] or info['is_enum']:
                     code(3, f'fprintf(stream, "{name} = {info["format"]}\\n",'
                         f' {info["filter_l"]}{casted}->{name}{info["filter_r"]});')
                 elif info['is_node']:

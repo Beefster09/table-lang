@@ -9,11 +9,11 @@ keywords = sorted(line.strip() for line in open(keywords_txt))
 
 directives_list = os.path.join(os.path.dirname(__file__), 'directives.list')
 
-directives = sorted(
+directives = sorted({
     line.strip().split()[0]
     for line in open(directives_list)
     if line[0].isalpha()
-)
+})
 
 def code(tabs, *parts, **kw):
     print('\t' * tabs, *parts, sep='', **kw)
